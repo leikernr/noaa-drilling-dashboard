@@ -45,7 +45,7 @@ def get_noaa_data():
                 if len(cols) >= 2:
                     freq = float(cols[0])
                     energy = float(cols[1])
-                    data.append({"Frequency (Hz)": freq, "Spectral Energy (m²/Hz)": energy})
+                    data.append({"Frequency ("Hz)": freq, "Spectral Energy (m²/Hz)": energy})
         df = pd.DataFrame(data)
         if df.empty or len(df) < 3:
             raise ValueError("Sparse data")
@@ -106,12 +106,10 @@ folium.CircleMarker(
 ).add_to(m)
 st_folium(m, width=700, height=400)
 
-# === CALL TO ACTION ===
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I’ll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
-""")
 """)
 
 
