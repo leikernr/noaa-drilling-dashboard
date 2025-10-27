@@ -8,9 +8,6 @@ from datetime import datetime
 import folium
 from streamlit_folium import st_folium
 
-# === AUTO-REFRESH EVERY 5 MINUTES ===
-st.autorefresh(interval=5 * 60 * 1000, key="data_refresh")
-
 st.set_page_config(page_title="Sonar to Sensors", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors")
@@ -29,7 +26,12 @@ with st.sidebar:
     """)
     st.info("NOAA Buoy 42001 → Gulf of Mexico → Analogous to rig sensor array")
 
-# === UPDATED DATA INGEST WITH FALLBACK & TIMESTAMP ===
+# === MANUAL REFRESH BUTTON ===
+if st.button("Refresh Data Now"):
+    st.cache_data.clear()
+    st.success("Data refreshed!")
+
+# === DATA INGEST WITH FALLBACK & TIMESTAMP ===
 @st.cache_data(ttl=600)
 def get_noaa_data():
     url = "https://www.ndbc.noaa.gov/data/realtime2/42001.spec"
@@ -51,7 +53,6 @@ def get_noaa_data():
         return df
     except:
         st.warning("NOAA data sparse or down. Using simulated calm-sea spectrum (realistic fallback).")
-        # Simulated realistic ocean spectrum (low energy, one peak)
         freqs = np.linspace(0.03, 0.40, 25)
         energy = 0.5 + 3 * np.exp(-60 * (freqs - 0.1)**2) + np.random.normal(0, 0.2, 25)
         df = pd.DataFrame({
@@ -61,9 +62,10 @@ def get_noaa_data():
         })
         return df
 
-# === FETCH DATA + LIVE TIMESTAMP ===
 df = get_noaa_data()
-st.caption(f"Data last refreshed: {datetime.now().strftime('%H:%M:%S UTC')} | NOAA updates hourly")
+
+# === LIVE TIMESTAMP ===
+st.caption(f"Data last refreshed: {datetime.now().strftime('%H:%M:%S UTC')} | Click button above to update")
 
 # === PLOT 1: SPECTRAL ENERGY ===
 fig1 = px.area(df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
@@ -110,4 +112,6 @@ st.success("""
 **Now I’ll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
+""")
+
 
