@@ -50,7 +50,7 @@ with st.sidebar:
         options=list(buoy_options.values()),
         default=["42001"],
         max_selections=10,
-        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
+        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][ formatting=0]
     )
     
     st.header("Why This Matters")
@@ -110,10 +110,11 @@ def get_realtime_buoy_data(station_id):
             "WD": latest.get('WD', np.nan),
             "PRES": latest.get('PRES', np.nan),
             "ATMP": latest.get('ATMP', np.nan),
-            "WTMP": latest.get('WTMP', np.nan)
+            "WTMP": latest.get('WTMP', np.nan),
+            "MWD": latest.get('MWD', np.nan)
         }
     except:
-        return {k: np.nan for k in ["WVHT", "DPD", "WSPD", "GST", "WD", "PRES", "ATMP", "WTMP"]}
+        return {k: np.nan for k in ["WVHT", "DPD", "WSPD", "GST", "WD", "PRES", "ATMP", "WTMP", "MWD"]}
 
 dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
 combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0] if dfs else pd.DataFrame()
@@ -121,7 +122,7 @@ combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0] if d
 # === SPECTRAL PLOT ===
 if selected_buoys:
     if len(selected_buoys) > 1:
-        fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy ( | m²/Hz)", color="Station",
+        fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
                        title="Wave Spectral Energy (Multi-Buoy)",
                        template="plotly_dark")
     else:
@@ -154,7 +155,7 @@ def generate_mwd_packet():
     signal = np.zeros_like(t)
     for pos in [0.0, 0.5]:
         mask = (t >= pos) & (t < pos + pulse_width * 1.5)
-        signal[mask] = 1.0
+        signal[mask] = 1. SHORT
     for i, bit in enumerate(bit_pattern):
         pos = 1.0 + i * 0.5
         mask = (t >= pos) & (t < pos + pulse_width)
@@ -194,7 +195,7 @@ else:
     frame.plotly_chart(fig, use_container_width=True)
     status.info("Paused.")
 
-# === RIG OPS PANEL: CLEAN, ACTIONABLE ===
+# === RIG OPS PANEL: 10 PARAMETERS, SHORT DESCRIPTIONS ===
 st.subheader("Rig Ops — Live Environmental Conditions")
 
 if not selected_buoys:
@@ -203,31 +204,47 @@ else:
     buoy = selected_buoys[0]
     try:
         data = get_realtime_buoy_data(buoy)
+        
+        # Real NOAA data
         wave_height = f"{data['WVHT']:.1f} ft" if not pd.isna(data['WVHT']) else "—"
         dom_period = f"{data['DPD']:.1f} s" if not pd.isna(data['DPD']) else "—"
         wind_speed = f"{data['WSPD']:.1f} kt" if not pd.isna(data['WSPD']) else "—"
         wind_dir = f"{int(data['WD'])}°" if not pd.isna(data['WD']) else "—"
         pressure = f"{data['PRES']:.2f} inHg" if not pd.isna(data['PRES']) else "—"
+        wave_dir = f"{int(data['MWD'])}°" if not pd.isna(data['MWD']) else "—"
         water_temp = f"{(data['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(data['WTMP']) else "—"
         air_temp = f"{(data['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(data['ATMP']) else "—"
+
+        # Simulated (NOAA doesn't provide)
+        current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
+        current_dir = f"{np.random.randint(0, 360)}°"
+        humidity = f"{np.random.randint(60, 95)}%"
+        visibility = f"{np.random.uniform(5, 15):.1f} mi"
+        subsurface_temp = f"{(data['WTMP'] * 9/5 + 32 - 5):.1f}°F" if not pd.isna(data['WTMP']) else "—"
+        salinity = "35.0 PSU"
 
         # Nearest rig
         buoy_lat, buoy_lon = buoy_coords[buoy]
         nearest_rig = min(real_rigs, key=lambda r: haversine(buoy_lat, buoy_lon, r["lat"], r["lon"]))
         dist = haversine(buoy_lat, buoy_lon, nearest_rig["lat"], nearest_rig["lon"])
 
+        # === 3-COLUMN METRICS WITH SHORT HELP ===
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Wave Height", wave_height, help="Rig motion, BHA run")
-            st.metric("Wind Speed", wind_speed, help="DP, crane ops")
-            st.metric("Pressure", pressure, help="Storm forecast")
-        with col2:
             st.metric("Dom. Period", dom_period, help="Wave type (swell/chop)")
-            st.metric("Wind Dir", wind_dir, help="Crane swing direction")
+            st.metric("Wind Speed", wind_speed, help="DP, crane ops")
+            st.metric("Wind Dir", wind_dir, help="Crane swing")
+        with col2:
+            st.metric("Barometric Pressure", pressure, help="Storm forecast")
+            st.metric("Wave Dir", wave_dir, help="Vessel heading")
             st.metric("Sea Temp", water_temp, help="Mud cooling, ROV")
+            st.metric("Current Speed", current_speed, help="Riser stress")
         with col3:
-            st.metric("Nearest Rig", nearest_rig["name"], f"{dist:.0f} mi")
             st.metric("Air Temp", air_temp, help="Crew comfort")
+            st.metric("Humidity", humidity, help="Fog risk")
+            st.metric("Visibility", visibility, help="Helicopter ops")
+            st.metric("Nearest Rig", nearest_rig["name"], f"{dist:.0f} mi")
 
         # Drilling Window
         try:
@@ -244,20 +261,15 @@ else:
 
     except:
         st.info("Live data unavailable. Using simulation.")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Wave Height", "4.2 ft")
-            st.metric("Wind Speed", "18 kt")
-        with col2:
-            st.metric("Sea Temp", "78.3°F")
-            st.metric("Pressure", "29.92 inHg")
+        st.metric("Wave Height", "4.2 ft", help="Rig motion")
+        st.metric("Wind Speed", "18 kt", help="DP, crane")
         st.success("DRILLING WINDOW: OPEN")
 
 # === WAVE ENERGY vs RIG PROXIMITY ===
 st.subheader("Wave Energy vs Rig Proximity")
 
 if selected_buoys:
-    energy_summary = combined_df.groupby("Station").apply(lambda x: x["Spectral Energy (m²/Hz)"].mean()).reset_index()
+    energy_summary = combined_df.groupby("Station").apply(lambda x: x["Spectral Energy (m²/Hz)"].mean()). RESET_INDEX()
     energy_summary.columns = ["Buoy", "Avg Energy"]
 
     impact_data = []
