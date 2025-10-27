@@ -8,6 +8,9 @@ from datetime import datetime
 import folium
 from streamlit_folium import st_folium
 
+# === AUTO-REFRESH EVERY 5 MINUTES ===
+st.autorefresh(interval=5 * 60 * 1000, key="data_refresh")
+
 st.set_page_config(page_title="Sonar to Sensors", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors")
@@ -26,6 +29,7 @@ with st.sidebar:
     """)
     st.info("NOAA Buoy 42001 → Gulf of Mexico → Analogous to rig sensor array")
 
+# === UPDATED DATA INGEST WITH FALLBACK & TIMESTAMP ===
 @st.cache_data(ttl=600)
 def get_noaa_data():
     url = "https://www.ndbc.noaa.gov/data/realtime2/42001.spec"
@@ -40,13 +44,28 @@ def get_noaa_data():
                     freq = float(cols[0])
                     energy = float(cols[1])
                     data.append({"Frequency (Hz)": freq, "Spectral Energy (m²/Hz)": energy})
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        if df.empty or len(df) < 3:
+            raise ValueError("Sparse data")
+        df["Last Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+        return df
     except:
-        st.error("NOAA API down. Using cached data.")
-        return pd.DataFrame({"Frequency (Hz)": [0.05, 0.1, 0.15], "Spectral Energy (m²/Hz)": [2.1, 3.4, 1.8]})
+        st.warning("NOAA data sparse or down. Using simulated calm-sea spectrum (realistic fallback).")
+        # Simulated realistic ocean spectrum (low energy, one peak)
+        freqs = np.linspace(0.03, 0.40, 25)
+        energy = 0.5 + 3 * np.exp(-60 * (freqs - 0.1)**2) + np.random.normal(0, 0.2, 25)
+        df = pd.DataFrame({
+            "Frequency (Hz)": freqs,
+            "Spectral Energy (m²/Hz)": energy.clip(0),
+            "Last Updated": [datetime.now().strftime("%Y-%m-%d %H:%M UTC")] * 25
+        })
+        return df
 
+# === FETCH DATA + LIVE TIMESTAMP ===
 df = get_noaa_data()
+st.caption(f"Data last refreshed: {datetime.now().strftime('%H:%M:%S UTC')} | NOAA updates hourly")
 
+# === PLOT 1: SPECTRAL ENERGY ===
 fig1 = px.area(df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
                title="Wave Spectral Energy = Analogous to MWD Gamma Ray Intensity",
                labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
@@ -54,6 +73,7 @@ fig1 = px.area(df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
+# === SIMULATED SONAR PING ===
 st.subheader("Simulated Active Sonar Ping (Resistivity Pulse)")
 t = np.linspace(0, 2, 200)
 ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
@@ -65,6 +85,7 @@ fig2.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
 fig2.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
 st.plotly_chart(fig2, use_container_width=True)
 
+# === MAP ===
 st.subheader("Sensor Location Context")
 m = folium.Map(location=[25.0, -90.0], zoom_start=6, tiles="CartoDB dark_matter")
 folium.CircleMarker(
@@ -83,11 +104,10 @@ folium.CircleMarker(
 ).add_to(m)
 st_folium(m, width=700, height=400)
 
+# === CALL TO ACTION ===
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I’ll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
-
 """)
-
 
