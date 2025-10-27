@@ -14,7 +14,7 @@ st.set_page_config(page_title="Sonar to Sensors Multi-Buoy", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
-**Real-Time Acoustic Energy Dashboard**  
+**Real-Time Acoustic Energy Real-Time Acoustic Energy Dashboard**  
 *From U.S. Navy STS2 sonar processing to MWD drilling optimization*  
 Built by a submarine veteran with 14 years in oilfield telemetry
 """)
@@ -119,13 +119,16 @@ else:
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
-# === LIVE ANIMATED RESISTIVITY PULSE ===
-st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
+# === LIVE ANIMATED RESISTIVITY PULSE (IN ISOLATED CONTAINER) ===
+pulse_container = st.container()
+status_placeholder = st.empty()
 
-frame = st.empty()
-status = st.empty()
+with pulse_container:
+    st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
+    frame = st.empty()
 
-for i in range(100):  # 10-second loop
+# Run animation in a loop — but **don't rerun the whole app**
+for i in range(100):
     t = np.linspace(0, 2, 200)
     pulse_time = (t - (i * 0.02)) % 2
     amplitude = np.sin(2 * np.pi * 5 * pulse_time) * np.exp(-pulse_time * 3)
@@ -149,20 +152,16 @@ for i in range(100):  # 10-second loop
     frame.plotly_chart(fig, use_container_width=True)
     
     if 30 < i < 70:
-        status.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
+        status_placeholder.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
     else:
-        status.info("Waiting for next pulse...")
+        status_placeholder.info("Waiting for next pulse...")
     
     time.sleep(0.1)
 
-# Auto-restart animation
-st.rerun()
-
-# === DYNAMIC MAP: SELECTED BUOYS ===
+# === DYNAMIC MAP: SELECTED BUOYS (NOW STAYS) ===
 st.subheader("Selected Buoy Locations (Gulf of Mexico)")
 m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
 
-# Buoy coords (from NOAA data)
 buoy_coords = {
     "42001": [25.933, -86.733],
     "42002": [27.933, -88.233],
@@ -196,7 +195,6 @@ for buoy in selected_buoys:
             fill=True
         ).add_to(m)
 
-# Sample Rig
 folium.CircleMarker(
     location=[26.0, -90.5],
     radius=8,
