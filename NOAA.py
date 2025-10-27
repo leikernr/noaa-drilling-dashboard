@@ -36,7 +36,7 @@ with st.sidebar:
         options=list(buoy_options.values()),
         default=["42001"],
         max_selections=10,
-        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][ formatting=0]
+        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][]
     )
     
     st.header("Why This Matters")
@@ -349,4 +349,5 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
+
 
