@@ -9,18 +9,17 @@ from zoneinfo import ZoneInfo
 import time
 import folium
 from streamlit_folium import st_folium
-from math import radians, sin, cos, sqrt, atan2  # Haversine
 
-st.set_page_config(page_title="Gulf Sensor Fusion", layout="wide")
+st.set_page_config(page_title="Sonar to Sensors Multi-Buoy", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
-**Real-Time Acoustic Energy + Rig Operations Dashboard**  
+**Real-Time Acoustic Energy Dashboard**  
 *From U.S. Navy STS2 sonar processing to MWD drilling optimization*  
 Built by a submarine veteran with 14 years in oilfield telemetry
 """)
 
-# === SIDEBAR: FULL ORIGINAL + MWD CONTROLS ===
+# === SIDEBAR: ORIGINAL TEXT + BUOYS + MWD CONTROLS ===
 with st.sidebar:
     st.header("Gulf Buoy Fleet (Select Up to 10)")
     buoy_options = {
@@ -122,6 +121,7 @@ st.plotly_chart(fig1, use_container_width=True)
 # === MWD PULSE SIMULATOR ===
 st.subheader("Live MWD Mud Pulse Telemetry (6-Pulse Packet)")
 
+# Validate bit pattern
 if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
     bit_pattern = "1010"
     st.warning("Invalid bit pattern. Using '1010'.")
@@ -139,16 +139,20 @@ status = st.empty()
 def generate_mwd_packet():
     t = np.linspace(0, 4, 400)
     signal = np.zeros_like(t)
+    # Sync pulses
     for pos in [0.0, 0.5]:
         mask = (t >= pos) & (t < pos + pulse_width * 1.5)
         signal[mask] = 1.0
+    # Data bits
     for i, bit in enumerate(bit_pattern):
         pos = 1.0 + i * 0.5
         mask = (t >= pos) & (t < pos + pulse_width)
         signal[mask] = 0.8 if bit == '1' else -0.8
+    # Noise
     signal += np.random.normal(0, noise_level, len(t))
     return pd.DataFrame({"Time (s)": t, "Amplitude": signal})
 
+# Animation loop
 if st.session_state.running:
     packet = generate_mwd_packet()
     for shift in np.linspace(0, 4, 80):
@@ -184,8 +188,8 @@ else:
     frame.plotly_chart(fig, use_container_width=True)
     status.info("Simulator paused.")
 
-# === MAP + REAL RIGS ===
-st.subheader("Buoy & Active Rig Locations (Gulf of Mexico)")
+# === MAP: ALL BUOYS + REAL RIG ===
+st.subheader("Selected Buoy Locations (Gulf of Mexico)")
 m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
 
 buoy_coords = {
@@ -208,79 +212,26 @@ for buoy in selected_buoys:
             fill=True
         ).add_to(m)
 
-# === 4 REAL RIGS (BOEM/BSEE 2025) ===
-real_rigs = [
-    {"name": "Neptune TLP", "operator": "Chevron", "lat": 27.37, "lon": -89.92, "status": "Active", "prod": "10k bbl/day"},
-    {"name": "Thunder Hawk SPAR", "operator": "Murphy Oil", "lat": 28.18, "lon": -88.67, "status": "Active", "prod": "8k bbl/day"},
-    {"name": "King's Quay FPS", "operator": "Shell", "lat": 27.75, "lon": -89.25, "status": "Active", "prod": "12k bbl/day"},
-    {"name": "Sailfin FPSO", "operator": "Beacon Offshore", "lat": 27.80, "lon": -90.20, "status": "Active", "prod": "7k bbl/day"}
-]
-
-if st.button("Update Rig & Buoy Status"):
+# === REAL RIG: High Island A-389 (ExxonMobil, Active Producer) ===
+rig_coords = [28.0, -94.0]  # BOEM data: ~250 miles west of Buoy 42001
+if st.button("Update Rig Status"):
     st.cache_data.clear()
-    st.success("Rig and buoy data refreshed from NOAA & BOEM.")
+    st.success("Rig status refreshed (Production: 5k bbl/day, Active)")
 
-for rig in real_rigs:
-    folium.CircleMarker(
-        location=[rig["lat"], rig["lon"]],
-        radius=12,
-        popup=f"{rig['name']} ({rig['operator']})<br>{rig['status']} | {rig['prod']}<br>Updated: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M CST/CDT')}",
-        color="orange",
-        fill=True
-    ).add_to(m)
+folium.CircleMarker(
+    location=rig_coords,
+    radius=12,
+    popup="High Island A-389 (ExxonMobil)<br>Active Oil Platform<br>Production: 5k bbl/day<br>Near Buoy 42001 | Updated: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M CST/CDT')}",
+    color="orange",
+    fill=True
+).add_to(m)
 
 st_folium(m, width=700, height=400)
 
-# === DISTANCE TABLE + INTEGRATION ===
-st.subheader("Buoy-to-Rig Distance Analysis")
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371  # km
-    dlat = radians(lat2 - lat1)
-    dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    return R * c * 0.621371  # miles
-
-dist_data = []
-for buoy in selected_buoys:
-    if buoy in buoy_coords:
-        b_lat, b_lon = buoy_coords[buoy]
-        for rig in real_rigs:
-            dist = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
-            dist_data.append({
-                "Buoy": buoy,
-                "Rig": rig["name"],
-                "Distance (mi)": round(dist, 1),
-                "Operator": rig["operator"]
-            })
-
-dist_df = pd.DataFrame(dist_data)
-if not dist_df.empty:
-    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
-
-# === WAVE ENERGY vs DISTANCE (Integration) ===
-st.subheader("Wave Energy Impact on Nearby Rigs")
-energy_summary = combined_df.groupby("Station").apply(lambda x: x["Spectral Energy (m²/Hz)"].mean()).reset_index()
-energy_summary.columns = ["Buoy", "Avg Energy (m²/Hz)"]
-
-impact_data = []
-for _, row in energy_summary.iterrows():
-    if row["Buoy"] in selected_buoys:
-        b_lat, b_lon = buoy_coords[row["Buoy"]]
-        min_dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
-        impact_data.append({"Buoy": row["Buoy"], "Avg Energy": row["Avg Energy (m²/Hz)"], "Nearest Rig (mi)": round(min_dist, 1)})
-
-impact_df = pd.DataFrame(impact_data)
-if not impact_df.empty:
-    fig2 = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy",
-                      hover_data=["Buoy"], title="Wave Energy vs Rig Proximity",
-                      template="plotly_dark")
-    fig2.update_layout(height=400)
-    st.plotly_chart(fig2, use_container_width=True)
-
-# === CTA ===
+# === CALL TO ACTION ===
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
+
