@@ -21,7 +21,6 @@ Built by a submarine veteran with 14 years in oilfield telemetry
 
 # -------------------------
 # === BUOY SIDEBAR ===
-# Only closest 6 buoys, no duplicates
 # -------------------------
 with st.sidebar:
     st.header("Gulf Buoy Fleet (Select Up to 6)")
@@ -40,7 +39,7 @@ with st.sidebar:
         max_selections=6,
         format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
-    
+
     st.header("Why This Matters")
     st.write("""
     - **Submarine Sonar** = Real-time signal processing  
@@ -145,15 +144,14 @@ def get_realtime_buoy_data(station_id):
 dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
 combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0] if dfs else pd.DataFrame()
 
+# Spectral Plot
 if selected_buoys:
     if len(selected_buoys) > 1:
         fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
-                       title="Wave Spectral Energy (Multi-Buoy)",
-                       template="plotly_dark")
+                       title="Wave Spectral Energy (Multi-Buoy)", template="plotly_dark")
     else:
         fig1 = px.area(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
-                       title=f"Wave Energy — Buoy {selected_buoys[0]}",
-                       template="plotly_dark")
+                       title=f"Wave Energy — Buoy {selected_buoys[0]}", template="plotly_dark")
     fig1.update_layout(height=350)
     st.plotly_chart(fig1, use_container_width=True)
 else:
@@ -164,9 +162,7 @@ else:
 # -------------------------
 st.subheader("Rig Ops — Live Environmental Conditions")
 
-if not selected_buoys:
-    st.info("Select a buoy to view live conditions.")
-else:
+if selected_buoys:
     buoy = selected_buoys[0]
     data = get_realtime_buoy_data(buoy)
 
@@ -180,33 +176,107 @@ else:
     air_temp = f"{(data['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(data['ATMP']) else "—"
 
     current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
-    current_dir = f"{np.random.randint(0, 360)}°"
     humidity = f"{np.random.randint(60, 95)}%"
     visibility = f"{np.random.uniform(5, 15):.1f} mi"
-    subsurface_temp = f"{(data['WTMP'] * 9/5 + 32 - 5):.1f}°F" if not pd.isna(data['WTMP']) else "—"
-    salinity = "35.0 PSU"
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Wave Height", wave_height, help="Rig motion, BHA run")
-        st.metric("Dom. Period", dom_period, help="Wave type (swell/chop)")
-        st.metric("Wind Speed", wind_speed, help="DP, crane ops")
-        st.metric("Wind Dir", wind_dir, help="Crane swing")
+        st.metric("Wave Height", wave_height)
+        st.metric("Dom. Period", dom_period)
+        st.metric("Wind Speed", wind_speed)
+        st.metric("Wind Dir", wind_dir)
     with col2:
-        st.metric("Barometric Pressure", pressure, help="Storm forecast")
-        st.metric("Wave Dir", wave_dir, help="Vessel heading")
-        st.metric("Sea Temp", water_temp, help="Mud cooling, ROV")
-        st.metric("Current Speed", current_speed, help="Riser stress")
+        st.metric("Barometric Pressure", pressure)
+        st.metric("Wave Dir", wave_dir)
+        st.metric("Sea Temp", water_temp)
+        st.metric("Current Speed", current_speed)
     with col3:
-        st.metric("Air Temp", air_temp, help="Crew comfort")
-        st.metric("Humidity", humidity, help="Fog risk")
-        st.metric("Visibility", visibility, help="Helicopter ops")
-        st.metric("Nearest Rig", real_rigs[0]["name"], "Sample")  # Placeholder
+        st.metric("Air Temp", air_temp)
+        st.metric("Humidity", humidity)
+        st.metric("Visibility", visibility)
+        st.metric("Nearest Rig", "—")
 
+# -------------------------
+# === MAP ===
+# -------------------------
+st.subheader("Buoy & Rig Locations")
+m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
+
+for buoy in selected_buoys:
+    if buoy in buoy_coords:
+        folium.CircleMarker(
+            location=buoy_coords[buoy],
+            radius=10,
+            popup=f"Buoy {buoy}",
+            color="cyan",
+            fill=True
+        ).add_to(m)
+
+for rig in real_rigs:
+    folium.CircleMarker(
+        location=[rig["lat"], rig["lon"]],
+        radius=12,
+        popup=rig["name"],
+        color="orange",
+        fill=True
+    ).add_to(m)
+
+st_folium(m, width=700, height=400)
+
+# -------------------------
+# === BUOY-RIG DISTANCE TABLE ===
+# -------------------------
+if selected_buoys:
+    dist_data = []
+    for buoy in selected_buoys:
+        if buoy in buoy_coords:
+            b_lat, b_lon = buoy_coords[buoy]
+            for rig in real_rigs:
+                dist = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
+                dist_data.append({"Buoy": buoy, "Rig": rig["name"], "Distance (mi)": round(dist, 1)})
+
+    dist_df = pd.DataFrame(dist_data)
+    st.subheader("Buoy-to-Rig Distances")
+    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
+
+# -------------------------
+# === WAVE ENERGY IMPACT vs NEAREST RIG ===
+# -------------------------
+if not combined_df.empty:
+    energy_summary = combined_df.groupby("Station")["Spectral Energy (m²/Hz)"].mean().reset_index()
+    energy_summary.columns = ["Buoy", "Avg Wave Energy (m²/Hz)"]
+
+    impact_data = []
+    for _, row in energy_summary.iterrows():
+        if row["Buoy"] in selected_buoys:
+            b_lat, b_lon = buoy_coords[row["Buoy"]]
+            min_dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
+            impact_data.append({
+                "Buoy": row["Buoy"],
+                "Avg Wave Energy (m²/Hz)": round(row["Avg Wave Energy (m²/Hz)"], 2),
+                "Nearest Rig (mi)": round(min_dist, 1)
+            })
+
+    impact_df = pd.DataFrame(impact_data)
+    if not impact_df.empty:
+        fig2 = px.scatter(
+            impact_df,
+            x="Nearest Rig (mi)",
+            y="Avg Wave Energy (m²/Hz)",
+            hover_data=["Buoy"],
+            title="Wave Energy vs Nearest Rig",
+            template="plotly_dark"
+        )
+        fig2.update_layout(height=400)
+        st.plotly_chart(fig2, use_container_width=True)
+
+# -------------------------
+# === CTA / FOOTER ===
+# -------------------------
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I'll do it for your rig at 55,000 ft.**  
-[Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
+[Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
 
 
