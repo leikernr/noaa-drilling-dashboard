@@ -5,36 +5,69 @@ import requests
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+from zoneinfo import ZoneInfo  # Houston time zone
 import folium
 from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Sonar to Sensors", layout="wide")
+st.set_page_config(page_title="Sonar to Sensors Multi-Buoy", layout="wide")
 
-st.title("Submarine Sonar to Subsea Sensors")
+st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
 **Real-Time Acoustic Energy Dashboard**  
 *From U.S. Navy STS2 sonar processing to MWD drilling optimization*  
 Built by a submarine veteran with 14 years in oilfield telemetry
 """)
 
+# === SIDEBAR: BUOY SELECTOR ===
 with st.sidebar:
+    st.header("Gulf Buoy Fleet (Select Up to 10)")
+    buoy_options = {
+        "42001 - West Florida Basin": "42001",
+        "42002 - Central Gulf": "42002",
+        "42003 - East Florida Basin": "42003",
+        "42004 - West Florida Shelf": "42004",
+        "42005 - Central Gulf Platforms": "42005",
+        "42007 - West Florida Basin": "42007",
+        "42008 - Central Gulf": "42008",
+        "42009 - Eastern Gulf": "42009",
+        "42010 - Western Gulf": "42010",
+        "42012 - Central Gulf": "42012",
+        "42013 - Eastern Gulf": "42013",
+        "42019 - West Florida Shelf": "42019",
+        "42020 - Central Gulf": "42020",
+        "42022 - Eastern Gulf": "42022",
+        "42035 - West Florida Shelf": "42035",
+        "42039 - Central Gulf": "42039",
+        "42040 - Eastern Gulf": "42040",
+        "42045 - Western Gulf": "42045",
+        "42046 - Central Gulf": "42046",
+        "42047 - Eastern Gulf": "42047"
+    }
+    selected_buoys = st.multiselect(
+        "Choose buoys for comparison (Gulf offshore array)",
+        options=list(buoy_options.values()),
+        default=["42001"],
+        max_selections=10,
+        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
+    )
+    
     st.header("Why This Matters")
     st.write("""
     - **Submarine Sonar** = Real-time signal processing in extreme noise  
     - **MWD Drilling** = Same math: gamma, resistivity, torque  
-    - **Energy Tech** = Needs leaders who’ve *lived* the data pipeline  
+    - **Energy Tech** = Multi-source fusion for regional ops  
     """)
-    st.info("NOAA Buoy 42001 → Gulf of Mexico → Analogous to rig sensor array")
+    st.info("NOAA 420xx series → Gulf Fleet → Analogous to multi-rig sensor arrays")
 
 # === MANUAL REFRESH BUTTON ===
-if st.button("Refresh Data Now"):
+if st.button("Refresh All Buoys"):
     st.cache_data.clear()
     st.success("Data refreshed!")
 
-# === DATA INGEST WITH FALLBACK & TIMESTAMP ===
+# === DATA INGEST (Multi-Buoy) ===
 @st.cache_data(ttl=600)
-def get_noaa_data():
-    url = "https://www.ndbc.noaa.gov/data/realtime2/42001.spec"
+def get_noaa_data(station_id):
+    url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.spec"
     try:
         response = requests.get(url, timeout=10)
         lines = response.text.splitlines()
@@ -49,29 +82,39 @@ def get_noaa_data():
         df = pd.DataFrame(data)
         if df.empty or len(df) < 3:
             raise ValueError("Sparse data")
-        df["Last Updated"] = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+        df["Station"] = station_id
+        df["Last Updated"] = datetime.now(ZoneInfo('America/Chicago')).strftime("%Y-%m-%d %H:%M CST/CDT")
         return df
     except:
-        st.warning("NOAA data sparse or down. Using simulated calm-sea spectrum (realistic fallback).")
+        st.warning(f"Buoy {station_id} sparse. Using simulated spectrum.")
         freqs = np.linspace(0.03, 0.40, 25)
         energy = 0.5 + 3 * np.exp(-60 * (freqs - 0.1)**2) + np.random.normal(0, 0.2, 25)
         df = pd.DataFrame({
             "Frequency (Hz)": freqs,
             "Spectral Energy (m²/Hz)": energy.clip(0),
-            "Last Updated": [datetime.now().strftime("%Y-%m-%d %H:%M UTC")] * 25
+            "Station": [station_id] * 25,
+            "Last Updated": [datetime.now(ZoneInfo('America/Chicago')).strftime("%Y-%m-%d %H:%M CST/CDT")] * 25
         })
         return df
 
-df = get_noaa_data()
+# Fetch for selected
+dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
+combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
 
 # === LIVE TIMESTAMP ===
-st.caption(f"Data last refreshed: {datetime.now().strftime('%H:%M:%S UTC')} | Click button above to update")
+st.caption(f"Data last refreshed: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')} | NOAA updates hourly | Click button to update")
 
-# === PLOT 1: SPECTRAL ENERGY ===
-fig1 = px.area(df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
-               title="Wave Spectral Energy = Analogous to MWD Gamma Ray Intensity",
-               labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
-               template="plotly_dark")
+# === PLOT 1: MULTI-BUOY SPECTRAL ENERGY ===
+if len(selected_buoys) > 1:
+    fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
+                   title="Multi-Buoy Wave Spectral Energy = Analogous to Multi-Rig MWD Gamma Intensity",
+                   labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
+                   template="plotly_dark")
+else:
+    fig1 = px.area(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
+                   title=f"Wave Spectral Energy for Buoy {selected_buoys[0]} = Analogous to MWD Gamma Ray Intensity",
+                   labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
+                   template="plotly_dark")
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
@@ -87,16 +130,45 @@ fig2.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
 fig2.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
 st.plotly_chart(fig2, use_container_width=True)
 
-# === MAP ===
-st.subheader("Sensor Location Context")
-m = folium.Map(location=[25.0, -90.0], zoom_start=6, tiles="CartoDB dark_matter")
-folium.CircleMarker(
-    location=[25.893, -89.668],
-    radius=10,
-    popup="NOAA Buoy 42001<br>Wave Spectra = Acoustic Proxy",
-    color="cyan",
-    fill=True
-).add_to(m)
+# === DYNAMIC MAP: SELECTED BUOYS ===
+st.subheader("Selected Buoy Locations (Gulf of Mexico)")
+m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
+
+# Buoy coords (from NOAA data)
+buoy_coords = {
+    "42001": [25.933, -86.733],
+    "42002": [27.933, -88.233],
+    "42003": [28.933, -84.733],
+    "42004": [26.933, -87.733],
+    "42005": [27.933, -88.233],
+    "42007": [25.933, -86.733],
+    "42008": [27.933, -88.233],
+    "42009": [28.933, -84.733],
+    "42010": [26.933, -87.733],
+    "42012": [27.933, -88.233],
+    "42013": [28.933, -84.733],
+    "42019": [26.933, -87.733],
+    "42020": [27.933, -88.233],
+    "42022": [28.933, -84.733],
+    "42035": [26.933, -87.733],
+    "42039": [27.933, -88.233],
+    "42040": [28.933, -84.733],
+    "42045": [26.933, -87.733],
+    "42046": [27.933, -88.233],
+    "42047": [28.933, -84.733]
+}
+
+for buoy in selected_buoys:
+    if buoy in buoy_coords:
+        folium.CircleMarker(
+            location=buoy_coords[buoy],
+            radius=10,
+            popup=f"NOAA Buoy {buoy}<br>Wave Spectra = Acoustic Proxy",
+            color="cyan",
+            fill=True
+        ).add_to(m)
+
+# Sample Rig
 folium.CircleMarker(
     location=[26.0, -90.5],
     radius=8,
@@ -104,13 +176,13 @@ folium.CircleMarker(
     color="orange",
     fill=True
 ).add_to(m)
+
 st_folium(m, width=700, height=400)
 
+# === CALL TO ACTION ===
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
-**Now I’ll do it for your rig at 55,000 ft.**  
+**Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
-
-
 
