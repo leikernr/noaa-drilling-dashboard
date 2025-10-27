@@ -7,9 +7,9 @@ import plotly.graph_objects as go
 from math import radians, sin, cos, sqrt, atan2
 import folium
 from streamlit_folium import st_folium
+import time
 
 st.set_page_config(page_title="Gulf Rig Ops", layout="wide")
-
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
 **Real-Time Acoustic Energy + Rig Operations Dashboard**  
@@ -18,7 +18,7 @@ Built by a submarine veteran with 14 years in oilfield telemetry
 """)
 
 # -------------------------
-# === BUOY SIDEBAR ===
+# === BUOYS & SIDEBAR ===
 # -------------------------
 with st.sidebar:
     st.header("Gulf Buoy Fleet (Select Up to 6)")
@@ -38,6 +38,14 @@ with st.sidebar:
         format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
 
+    st.header("Why This Matters")
+    st.write("""
+    - **Submarine Sonar** = Real-time signal processing  
+    - **MWD Drilling** = Same math: gamma, resistivity, torque  
+    - **Energy Tech** = Multi-source fusion for ops  
+    """)
+    st.info("NOAA 420xx → Gulf Fleet → Multi-rig sensor analogy")
+
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
     pulse_width = st.slider("Pulse Width (s)", 0.05, 0.5, 0.1, 0.05)
@@ -48,7 +56,7 @@ with st.sidebar:
         st.experimental_rerun()
 
 # -------------------------
-# === RIGS & BUOYS ===
+# === RIGS & BUOYS DATA ===
 # -------------------------
 real_rigs = [
     {"name": "Neptune TLP", "lat": 27.37, "lon": -89.92},
@@ -66,19 +74,16 @@ buoy_coords = {
     "42020": [27.933, -88.233]
 }
 
-# -------------------------
-# === UTILITIES ===
-# -------------------------
 def haversine(lat1, lon1, lat2, lon2):
     R = 6371
     dlat = radians(lat2 - lat1)
     dlon = radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    c = 2 * atan2(sqrt(a), sqrt(1-a))
-    return R * c * 0.621371
+    a = sin(dlat/2)**2 + cos(radians(lat1))*cos(radians(lat2))*sin(dlon/2)**2
+    c = 2*atan2(sqrt(a), sqrt(1-a))
+    return R*c*0.621371
 
 # -------------------------
-# === NOAA DATA ===
+# === NOAA DATA FUNCTIONS ===
 # -------------------------
 @st.cache_data(ttl=600)
 def get_noaa_data(station_id):
@@ -97,8 +102,8 @@ def get_noaa_data(station_id):
         return df
     except:
         freqs = np.linspace(0.03, 0.40, 25)
-        energy = 0.5 + 3 * np.exp(-60 * (freqs - 0.1)**2) + np.random.normal(0, 0.2, 25)
-        return pd.DataFrame({"Frequency (Hz)": freqs, "Spectral Energy (m²/Hz)": energy.clip(0), "Station": [station_id]*25})
+        energy = 0.5 + 3*np.exp(-60*(freqs-0.1)**2) + np.random.normal(0,0.2,25)
+        return pd.DataFrame({"Frequency (Hz)":freqs,"Spectral Energy (m²/Hz)":energy.clip(0),"Station":[station_id]*25})
 
 @st.cache_data(ttl=600)
 def get_realtime_buoy_data(station_id):
@@ -124,69 +129,62 @@ def get_realtime_buoy_data(station_id):
 # === COMBINE SPECTRAL DATA ===
 # -------------------------
 dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
-combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0] if dfs else pd.DataFrame()
-
+combined_df = pd.concat(dfs, ignore_index=True) if len(dfs)>1 else dfs[0] if dfs else pd.DataFrame()
 if selected_buoys:
-    if len(selected_buoys) > 1:
+    if len(selected_buoys)>1:
         fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
                        title="Wave Spectral Energy (Multi-Buoy)", template="plotly_dark")
     else:
         fig1 = px.area(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
                        title=f"Wave Energy — Buoy {selected_buoys[0]}", template="plotly_dark")
     fig1.update_layout(height=350)
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1,use_container_width=True)
 
 # -------------------------
-# === WAVE ENERGY VS RIG PROXIMITY ===
+# === WAVE ENERGY vs RIG PROXIMITY ===
 # -------------------------
 st.subheader("Wave Energy Impact on Nearby Rigs")
 impact_data = []
 for buoy in selected_buoys:
-    b_lat, b_lon = buoy_coords[buoy]
+    b_lat,b_lon = buoy_coords[buoy]
     avg_energy = combined_df[combined_df["Station"]==buoy]["Spectral Energy (m²/Hz)"].mean()
     nearest_dist = min([haversine(b_lat,b_lon,r["lat"],r["lon"]) for r in real_rigs])
-    impact_data.append({"Buoy": buoy, "Avg Energy": round(avg_energy,2), "Nearest Rig (mi)": round(nearest_dist,1)})
+    impact_data.append({"Buoy":buoy,"Avg Energy":round(avg_energy,2),"Nearest Rig (mi)":round(nearest_dist,1)})
 impact_df = pd.DataFrame(impact_data)
 if not impact_df.empty:
-    fig2 = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy", hover_data=["Buoy"],
-                      title="Wave Energy vs Rig Proximity", template="plotly_dark")
+    fig2 = px.scatter(impact_df,x="Nearest Rig (mi)",y="Avg Energy",hover_data=["Buoy"],
+                      title="Wave Energy vs Rig Proximity",template="plotly_dark")
     fig2.update_layout(height=400)
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2,use_container_width=True)
 
 # -------------------------
-# === MWD PULSE SIMULATOR (NON-BLOCKING) ===
+# === MWD PULSE SIMULATOR ===
 # -------------------------
 st.subheader("MWD Mud Pulse Telemetry")
-if 'running' not in st.session_state:
-    st.session_state.running = True
-if 'mwd_frame' not in st.session_state:
-    st.session_state.mwd_frame = 0
-
-col1, col2 = st.columns([1,5])
+if 'running' not in st.session_state: st.session_state.running=True
+if 'mwd_frame' not in st.session_state: st.session_state.mwd_frame=0
+col1,col2 = st.columns([1,5])
 with col1:
     if st.button("Stop" if st.session_state.running else "Start"):
         st.session_state.running = not st.session_state.running
-
 frame = st.empty()
 status = st.empty()
-
 def generate_mwd_packet():
     t = np.linspace(0,4,400)
     signal = np.zeros_like(t)
-    for i, bit in enumerate(bit_pattern):
-        pos = 1.0 + i*0.5
-        mask = (t>=pos) & (t<pos+pulse_width)
-        signal[mask] = 0.8 if bit=='1' else -0.8
-    signal += np.random.normal(0,noise_level,len(t))
+    for i,bit in enumerate(bit_pattern):
+        pos=1.0+i*0.5
+        mask = (t>=pos)&(t<pos+pulse_width)
+        signal[mask]=0.8 if bit=='1' else -0.8
+    signal+=np.random.normal(0,noise_level,len(t))
     return pd.DataFrame({"Time (s)":t,"Amplitude":signal})
-
 packet = generate_mwd_packet()
 shift = st.session_state.mwd_frame*0.05
-t_shifted = (packet["Time (s)"] - shift) % 4
-visible = (t_shifted>=0) & (t_shifted<=2)
-df_plot = pd.DataFrame({"Time (s)":t_shifted[visible],"Amplitude":packet["Amplitude"][visible]})
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=3)))
+t_shifted = (packet["Time (s)"]-shift)%4
+visible = (t_shifted>=0)&(t_shifted<=2)
+df_plot=pd.DataFrame({"Time (s)":t_shifted[visible],"Amplitude":packet["Amplitude"][visible]})
+fig=go.Figure()
+fig.add_trace(go.Scatter(x=df_plot["Time (s)"],y=df_plot["Amplitude"],mode='lines',line=dict(color='cyan',width=3)))
 fig.add_hline(y=0,line_dash="dot",line_color="gray")
 fig.add_vline(x=0,line_dash="dash",line_color="red")
 fig.add_vline(x=2,line_dash="dash",line_color="red")
@@ -194,7 +192,7 @@ fig.update_layout(height=300,template="plotly_dark",showlegend=False,xaxis_range
 frame.plotly_chart(fig,use_container_width=True)
 status.info("Running..." if st.session_state.running else "Paused")
 if st.session_state.running:
-    st.session_state.mwd_frame = (st.session_state.mwd_frame+1)%80
+    st.session_state.mwd_frame=(st.session_state.mwd_frame+1)%80
     st.experimental_rerun()
 
 # -------------------------
@@ -202,40 +200,38 @@ if st.session_state.running:
 # -------------------------
 st.subheader("Rig Ops — Live Environmental Conditions")
 if selected_buoys:
-    buoy = selected_buoys[0]
-    data = get_realtime_buoy_data(buoy)
-    wave_height = f"{data['WVHT']:.1f} ft" if pd.notna(data['WVHT']) else "—"
-    dom_period = f"{data['DPD']:.1f} s" if pd.notna(data['DPD']) else "—"
-    wind_speed = f"{data['WSPD']:.1f} kt" if pd.notna(data['WSPD']) else f"{np.random.uniform(1,5):.1f} kt"
-    wind_dir = f"{int(data['WD'])}°" if pd.notna(data['WD']) else f"{np.random.randint(0,360)}°"
-    pressure = f"{data['PRES']:.2f} inHg" if pd.notna(data['PRES']) else "1015.00 inHg"
-    wave_dir = f"{int(data['MWD'])}°" if pd.notna(data['MWD']) else f"{np.random.randint(0,360)}°"
-    water_temp = f"{(data['WTMP']*9/5+32):.1f}°F" if pd.notna(data['WTMP']) else "86.2°F"
-    air_temp = f"{(data['ATMP']*9/5+32):.1f}°F" if pd.notna(data['ATMP']) else "84.6°F"
-    current_speed = f"{np.random.uniform(0.5,2.0):.1f} kt"
-    humidity = f"{np.random.randint(60,95)}%"
-    visibility = f"{np.random.uniform(5,15):.1f} mi"
-
-    b_lat, b_lon = buoy_coords[buoy]
-    nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
-    dist = haversine(b_lat, b_lon, nearest_rig["lat"], nearest_rig["lon"])
-
-    col1, col2, col3 = st.columns(3)
+    buoy=selected_buoys[0]
+    data=get_realtime_buoy_data(buoy)
+    wave_height=f"{data['WVHT']:.1f} ft" if pd.notna(data['WVHT']) else "—"
+    dom_period=f"{data['DPD']:.1f} s" if pd.notna(data['DPD']) else "—"
+    wind_speed=f"{data['WSPD']:.1f} kt" if pd.notna(data['WSPD']) else f"{np.random.uniform(1,5):.1f} kt"
+    wind_dir=f"{int(data['WD'])}°" if pd.notna(data['WD']) else f"{np.random.randint(0,360)}°"
+    pressure=f"{data['PRES']:.2f} inHg" if pd.notna(data['PRES']) else "1015.00 inHg"
+    wave_dir=f"{int(data['MWD'])}°" if pd.notna(data['MWD']) else f"{np.random.randint(0,360)}°"
+    water_temp=f"{(data['WTMP']*9/5+32):.1f}°F" if pd.notna(data['WTMP']) else "86.2°F"
+    air_temp=f"{(data['ATMP']*9/5+32):.1f}°F" if pd.notna(data['ATMP']) else "84.6°F"
+    current_speed=f"{np.random.uniform(0.5,2.0):.1f} kt"
+    humidity=f"{np.random.randint(60,95)}%"
+    visibility=f"{np.random.uniform(5,15):.1f} mi"
+    b_lat,b_lon=buoy_coords[buoy]
+    nearest_rig=min(real_rigs,key=lambda r:haversine(b_lat,b_lon,r["lat"],r["lon"]))
+    dist=haversine(b_lat,b_lon,nearest_rig["lat"],nearest_rig["lon"])
+    col1,col2,col3=st.columns(3)
     with col1:
-        st.metric("Wave Height", wave_height)
-        st.metric("Dom. Period", dom_period)
-        st.metric("Wind Speed", wind_speed)
-        st.metric("Wind Dir", wind_dir)
+        st.metric("Wave Height",wave_height)
+        st.metric("Dom. Period",dom_period)
+        st.metric("Wind Speed",wind_speed)
+        st.metric("Wind Dir",wind_dir)
     with col2:
-        st.metric("Barometric Pressure", pressure)
-        st.metric("Wave Dir", wave_dir)
-        st.metric("Sea Temp", water_temp)
-        st.metric("Current Speed", current_speed)
+        st.metric("Barometric Pressure",pressure)
+        st.metric("Wave Dir",wave_dir)
+        st.metric("Sea Temp",water_temp)
+        st.metric("Current Speed",current_speed)
     with col3:
-        st.metric("Air Temp", air_temp)
-        st.metric("Humidity", humidity)
-        st.metric("Visibility", visibility)
-        st.metric("Nearest Rig", f"{nearest_rig['name']} ({dist:.1f} mi)")
+        st.metric("Air Temp",air_temp)
+        st.metric("Humidity",humidity)
+        st.metric("Visibility",visibility)
+        st.metric("Nearest Rig",f"{nearest_rig['name']} ({dist:.1f} mi)")
 
 # -------------------------
 # === MAP ===
@@ -243,12 +239,11 @@ if selected_buoys:
 st.subheader("Buoy & Rig Locations")
 m = folium.Map(location=[27.5, -88.5], zoom_start=6)
 for rig in real_rigs:
-    folium.Marker([rig["lat"], rig["lon"]], popup=rig["name"], icon=folium.Icon(color='blue')).add_to(m)
+    folium.Marker([rig["lat"],rig["lon"]],popup=rig["name"],icon=folium.Icon(color='blue')).add_to(m)
 for buoy in selected_buoys:
-    lat, lon = buoy_coords[buoy]
-    folium.CircleMarker([lat, lon], radius=6, color='red', fill=True, fill_opacity=0.7,
-                        popup=f"Buoy {buoy}").add_to(m)
-st_folium(m, width=700, height=400)
+    lat,lon=buoy_coords[buoy]
+    folium.CircleMarker([lat,lon],radius=6,color='red',fill=True,fill_opacity=0.7,popup=f"Buoy {buoy}").add_to(m)
+st_folium(m,width=700,height=400)
 
 # -------------------------
 # === FOOTER ===
@@ -258,6 +253,4 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
-
-
 
