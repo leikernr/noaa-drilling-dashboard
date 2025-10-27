@@ -27,16 +27,19 @@ with st.sidebar:
         "42001 - West Florida Basin": "42001",
         "42002 - Central Gulf": "42002",
         "42003 - East Florida Basin": "42003",
+        "42010 - Western Gulf": "42010",
         "42012 - Central Gulf": "42012",
+        "42013 - Eastern Gulf": "42013",
         "42019 - West Florida Shelf": "42019",
         "42020 - Central Gulf": "42020",
+
     }
     selected_buoys = st.multiselect(
         "Choose buoys",
         options=list(buoy_options.values()),
         default=["42001"],
         max_selections=10,
-        format_func=lambda x: [k for k, v in buoy_options.items() if v == x]
+        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][ formatting=0]
     )
     
     st.header("Why This Matters")
@@ -349,6 +352,5 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
-
 
 
