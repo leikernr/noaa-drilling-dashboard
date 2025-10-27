@@ -14,7 +14,7 @@ st.set_page_config(page_title="Sonar to Sensors Multi-Buoy", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
-**Real-Time Acoustic Energy Real-Time Acoustic Energy Dashboard**  
+**Real-Time Acoustic Energy Dashboard**  
 *From U.S. Navy STS2 sonar processing to MWD drilling optimization*  
 Built by a submarine veteran with 14 years in oilfield telemetry
 """)
@@ -103,7 +103,7 @@ dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
 combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
 
 # === LIVE TIMESTAMP ===
-st.caption(f"Data last refreshed: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')} | NOAA updates hourly | Click button to update")
+st.caption(f"Data last refreshed: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')} | NOAA updates hourly")
 
 # === PLOT 1: MULTI-BUOY SPECTRAL ENERGY ===
 if len(selected_buoys) > 1:
@@ -119,46 +119,73 @@ else:
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
-# === LIVE ANIMATED RESISTIVITY PULSE (IN ISOLATED CONTAINER) ===
-pulse_container = st.container()
-status_placeholder = st.empty()
+# === LIVE ANIMATED RESISTIVITY PULSE WITH START/STOP ===
+st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
 
-with pulse_container:
-    st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
-    frame = st.empty()
+# Session state for button
+if 'pulse_running' not in st.session_state:
+    st.session_state.pulse_running = False
 
-# Run animation in a loop — but **don't rerun the whole app**
-for i in range(100):
+# Start/Stop button
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("Start Pulse" if not st.session_state.pulse_running else "Stop Pulse"):
+        st.session_state.pulse_running = not st.session_state.pulse_running
+
+# Containers
+frame = st.empty()
+status = st.empty()
+
+# Run animation only if ON
+if st.session_state.pulse_running:
+    for i in range(100):
+        t = np.linspace(0, 2, 200)
+        pulse_time = (t - (i * 0.02)) % 2
+        amplitude = np.sin(2 * np.pi * 5 * pulse_time) * np.exp(-pulse_time * 3)
+        noise = np.random.normal(0, 0.05, len(t))
+        signal = amplitude + noise
+        ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": signal})
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+            mode='lines', line=dict(color='cyan', width=3)
+        ))
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
+        fig.update_layout(
+            height=300,
+            template="plotly_dark",
+            showlegend=False,
+            xaxis_title="Time (s)",
+            yaxis_title="Signal Strength"
+        )
+        frame.plotly_chart(fig, use_container_width=True)
+        
+        if 30 < i < 70:
+            status.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
+        else:
+            status.info("Waiting for next pulse...")
+        
+        time.sleep(0.1)
+        
+        # Stop if button toggled
+        if not st.session_state.pulse_running:
+            break
+else:
+    # Show static pulse when stopped
     t = np.linspace(0, 2, 200)
-    pulse_time = (t - (i * 0.02)) % 2
-    amplitude = np.sin(2 * np.pi * 5 * pulse_time) * np.exp(-pulse_time * 3)
-    noise = np.random.normal(0, 0.05, len(t))
-    signal = amplitude + noise
-    ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": signal})
-    
+    ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
+    ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=ping_df["Time (s)"], y=ping_df["Amplitude"],
-        mode='lines', line=dict(color='cyan', width=3)
-    ))
+    fig.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+                             mode='lines', line=dict(color='cyan', width=3)))
     fig.add_hline(y=0, line_dash="dot", line_color="gray")
-    fig.update_layout(
-        height=300,
-        template="plotly_dark",
-        showlegend=False,
-        xaxis_title="Time (s)",
-        yaxis_title="Signal Strength"
-    )
+    fig.update_layout(height=300, template="plotly_dark", showlegend=False,
+                      xaxis_title="Time (s)", yaxis_title="Signal Strength")
     frame.plotly_chart(fig, use_container_width=True)
-    
-    if 30 < i < 70:
-        status_placeholder.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
-    else:
-        status_placeholder.info("Waiting for next pulse...")
-    
-    time.sleep(0.1)
+    status.info("Pulse stopped. Click 'Start Pulse' to begin.")
 
-# === DYNAMIC MAP: SELECTED BUOYS (NOW STAYS) ===
+# === DYNAMIC MAP: ALWAYS VISIBLE ===
 st.subheader("Selected Buoy Locations (Gulf of Mexico)")
 m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
 
@@ -211,5 +238,3 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
-
-
