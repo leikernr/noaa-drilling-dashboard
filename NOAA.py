@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 from zoneinfo import ZoneInfo  # Houston time zone
+import time  # For animation
 import folium
 from streamlit_folium import st_folium
 
@@ -118,17 +119,44 @@ else:
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
-# === SIMULATED SONAR PING ===
-st.subheader("Simulated Active Sonar Ping (Resistivity Pulse)")
-t = np.linspace(0, 2, 200)
-ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
-ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
+# === LIVE ANIMATED RESISTIVITY PULSE ===
+st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
 
-fig2 = go.Figure()
-fig2.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
-                          mode='lines', name='Resistivity Pulse', line=dict(color='cyan')))
-fig2.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
-st.plotly_chart(fig2, use_container_width=True)
+frame = st.empty()
+status = st.empty()
+
+for i in range(100):  # 10-second loop
+    t = np.linspace(0, 2, 200)
+    pulse_time = (t - (i * 0.02)) % 2
+    amplitude = np.sin(2 * np.pi * 5 * pulse_time) * np.exp(-pulse_time * 3)
+    noise = np.random.normal(0, 0.05, len(t))
+    signal = amplitude + noise
+    ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": signal})
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+        mode='lines', line=dict(color='cyan', width=3)
+    ))
+    fig.add_hline(y=0, line_dash="dot", line_color="gray")
+    fig.update_layout(
+        height=300,
+        template="plotly_dark",
+        showlegend=False,
+        xaxis_title="Time (s)",
+        yaxis_title="Signal Strength"
+    )
+    frame.plotly_chart(fig, use_container_width=True)
+    
+    if 30 < i < 70:
+        status.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
+    else:
+        status.info("Waiting for next pulse...")
+    
+    time.sleep(0.1)
+
+# Auto-restart animation
+st.rerun()
 
 # === DYNAMIC MAP: SELECTED BUOYS ===
 st.subheader("Selected Buoy Locations (Gulf of Mexico)")
@@ -185,4 +213,5 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
+
 
