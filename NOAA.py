@@ -86,7 +86,8 @@ st_folium(m, width=700, height=400)
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I’ll do it for your rig at 55,000 ft.**  
-[Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | MRE Consulting Ready
+[Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 
 """)
+
 
