@@ -27,12 +27,23 @@ with st.sidebar:
         "42001 - West Florida Basin": "42001",
         "42002 - Central Gulf": "42002",
         "42003 - East Florida Basin": "42003",
+        "42004 - West Florida Shelf": "42004",
+        "42005 - Central Gulf Platforms": "42005",
+        "42007 - West Florida Basin": "42007",
+        "42008 - Central Gulf": "42008",
+        "42009 - Eastern Gulf": "42009",
         "42010 - Western Gulf": "42010",
         "42012 - Central Gulf": "42012",
         "42013 - Eastern Gulf": "42013",
         "42019 - West Florida Shelf": "42019",
         "42020 - Central Gulf": "42020",
-
+        "42022 - Eastern Gulf": "42022",
+        "42035 - West Florida Shelf": "42035",
+        "42039 - Central Gulf": "42039",
+        "42040 - Eastern Gulf": "42040",
+        "42045 - Western Gulf": "42045",
+        "42046 - Central Gulf": "42046",
+        "42047 - Eastern Gulf": "42047"
     }
     selected_buoys = st.multiselect(
         "Choose buoys",
@@ -352,5 +363,3 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
-
-
