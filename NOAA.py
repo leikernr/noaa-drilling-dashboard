@@ -120,7 +120,7 @@ fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
 # === MWD PULSE SIMULATOR ===
-st.subheader("Live MWD Mud Pulse Telemetry (6-Pulse Packet)")
+st.subheader("Live MWD Mud Pulse Telemetry (6-Pulse Sim Packet)")
 
 if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
     bit_pattern = "1010"
@@ -278,10 +278,11 @@ if not impact_df.empty:
     fig2.update_layout(height=400)
     st.plotly_chart(fig2, use_container_width=True)
 
-# === CTA ===
+
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis position with MRE Consulting
 """)
+
 
