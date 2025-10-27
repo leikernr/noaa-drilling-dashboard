@@ -119,69 +119,96 @@ else:
 fig1.update_layout(height=400)
 st.plotly_chart(fig1, use_container_width=True)
 
-# === LIVE ANIMATED RESISTIVITY PULSE WITH START/STOP ===
-st.subheader("Live MWD Resistivity Pulse (Mud Pulse Telemetry)")
+# === REAL MWD MUD PULSE TELEMETRY (6-PULSE PACKET) ===
+st.subheader("Live MWD Mud Pulse Telemetry (Real 6-Pulse Packet)")
 
-# Session state for button
+# Session state for Start/Stop
 if 'pulse_running' not in st.session_state:
     st.session_state.pulse_running = False
 
-# Start/Stop button
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("Start Pulse" if not st.session_state.pulse_running else "Stop Pulse"):
         st.session_state.pulse_running = not st.session_state.pulse_running
 
-# Containers
 frame = st.empty()
 status = st.empty()
 
-# Run animation only if ON
+# Generate realistic MWD pulse packet
+def generate_mwd_packet():
+    t = np.linspace(0, 4, 400)  # 4 seconds
+    signal = np.zeros_like(t)
+    
+    # Sync pulses (2 jumps at 0.0s and 0.5s)
+    sync1 = (t >= 0.0) & (t < 0.1)
+    sync2 = (t >= 0.5) & (t < 0.6)
+    signal[sync1] = 1.0
+    signal[sync2] = 1.0
+    
+    # Data bits (4 pulses: +0.8, -0.8, +0.8, -0.8)
+    bit1 = (t >= 1.0) & (t < 1.1)
+    bit2 = (t >= 1.5) & (t < 1.6)
+    bit3 = (t >= 2.0) & (t < 2.1)
+    bit4 = (t >= 2.5) & (t < 2.6)
+    signal[bit1] = 0.8
+    signal[bit2] = -0.8
+    signal[bit3] = 0.8
+    signal[bit4] = -0.8
+    
+    # Add rig noise
+    noise = np.random.normal(0, 0.05, len(t))
+    signal += noise
+    
+    return pd.DataFrame({"Time (s)": t, "Amplitude": signal})
+
+# Run animation
 if st.session_state.pulse_running:
-    for i in range(100):
-        t = np.linspace(0, 2, 200)
-        pulse_time = (t - (i * 0.02)) % 2
-        amplitude = np.sin(2 * np.pi * 5 * pulse_time) * np.exp(-pulse_time * 3)
-        noise = np.random.normal(0, 0.05, len(t))
-        signal = amplitude + noise
-        ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": signal})
+    packet = generate_mwd_packet()
+    for shift in np.linspace(0, 4, 80):  # Slide packet across
+        t_shifted = packet["Time (s)"] - shift
+        visible = (t_shifted >= 0) & (t_shifted <= 2)
+        df_plot = pd.DataFrame({
+            "Time (s)": t_shifted[visible],
+            "Amplitude": packet["Amplitude"][visible]
+        })
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+            x=df_plot["Time (s)"], y=df_plot["Amplitude"],
             mode='lines', line=dict(color='cyan', width=3)
         ))
         fig.add_hline(y=0, line_dash="dot", line_color="gray")
+        fig.add_vline(x=0, line_dash="dash", line_color="red")
+        fig.add_vline(x=2, line_dash="dash", line_color="red")
         fig.update_layout(
-            height=300,
-            template="plotly_dark",
-            showlegend=False,
-            xaxis_title="Time (s)",
-            yaxis_title="Signal Strength"
+            height=300, template="plotly_dark", showlegend=False,
+            xaxis_title="Time (s)", yaxis_title="Signal",
+            xaxis_range=[0, 2]
         )
         frame.plotly_chart(fig, use_container_width=True)
         
-        if 30 < i < 70:
-            status.success(f"PULSE DETECTED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
+        # Decode status
+        if shift > 1.5 and shift < 2.8:
+            status.success(f"MWD PACKET RECEIVED @ {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')}")
         else:
-            status.info("Waiting for next pulse...")
+            status.info("Waiting for next MWD packet...")
         
         time.sleep(0.1)
         
-        # Stop if button toggled
         if not st.session_state.pulse_running:
             break
 else:
-    # Show static pulse when stopped
-    t = np.linspace(0, 2, 200)
-    ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
-    ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
+    # Static packet when stopped
+    packet = generate_mwd_packet()
+    df_plot = packet[packet["Time (s)"] <= 2]
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+    fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"],
                              mode='lines', line=dict(color='cyan', width=3)))
     fig.add_hline(y=0, line_dash="dot", line_color="gray")
+    fig.add_vline(x=0, line_dash="dash", line_color="red")
+    fig.add_vline(x=2, line_dash="dash", line_color="red")
     fig.update_layout(height=300, template="plotly_dark", showlegend=False,
-                      xaxis_title="Time (s)", yaxis_title="Signal Strength")
+                      xaxis_title="Time (s)", yaxis_title="Signal", xaxis_range=[0, 2])
     frame.plotly_chart(fig, use_container_width=True)
     status.info("Pulse stopped. Click 'Start Pulse' to begin.")
 
