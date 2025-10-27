@@ -11,7 +11,7 @@ import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, sqrt, atan2  # Haversine
 
-st.set_page_config(page_title="Gulf Rig Ops", layout="wide")
+st.set_page_config(page_title="Gulf Sensor Fusion", layout="wide")
 
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico Fleet")
 st.markdown("""
@@ -70,7 +70,7 @@ with st.sidebar:
         st.cache_data.clear()
         st.success("Data refreshed!")
 
-# === DATA INGEST: SPECTRAL + REAL-TIME ===
+# === DATA INGEST ===
 @st.cache_data(ttl=600)
 def get_noaa_data(station_id):
     url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.spec"
@@ -99,49 +99,25 @@ def get_noaa_data(station_id):
             "Last Updated": [datetime.now(ZoneInfo('America/Chicago')).strftime("%Y-%m-%d %H:%M CST/CDT")] * 25
         })
 
-@st.cache_data(ttl=600)
-def get_realtime_buoy_data(station_id):
-    url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.txt"
-    try:
-        df = pd.read_csv(url, delim_whitespace=True, skiprows=[1], na_values=['MM'])
-        latest = df.iloc[-1]
-        return {
-            "WVHT": latest.get('WVHT', np.nan),
-            "DPD": latest.get('DPD', np.nan),
-            "APD": latest.get('APD', np.nan),
-            "MWD": latest.get('MWD', np.nan),
-            "WSPD": latest.get('WSPD', np.nan),
-            "GST": latest.get('GST', np.nan),
-            "WD": latest.get('WD', np.nan),
-            "ATMP": latest.get('ATMP', np.nan),
-            "WTMP": latest.get('WTMP', np.nan),
-            "PRES": latest.get('PRES', np.nan)
-        }
-    except:
-        return {k: np.nan for k in ["WVHT", "DPD", "APD", "MWD", "WSPD", "GST", "WD", "ATMP", "WTMP", "PRES"]}
-
 dfs = [get_noaa_data(buoy) for buoy in selected_buoys]
-combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0] if dfs else pd.DataFrame()
+combined_df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
 
 # === LIVE TIMESTAMP ===
 st.caption(f"Data last refreshed: {datetime.now(ZoneInfo('America/Chicago')).strftime('%H:%M:%S CST/CDT')} | NOAA updates hourly")
 
 # === SPECTRAL PLOT ===
-if selected_buoys:
-    if len(selected_buoys) > 1:
-        fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
-                       title="Multi-Buoy Wave Spectral Energy = Analogous to Multi-Rig MWD Gamma Intensity",
-                       labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
-                       template="plotly_dark")
-    else:
-        fig1 = px.area(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
-                       title=f"Wave Spectral Energy for Buoy {selected_buoys[0]} = Analogous to MWD Gamma Ray Intensity",
-                       labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
-                       template="plotly_dark")
-    fig1.update_layout(height=400)
-    st.plotly_chart(fig1, use_container_width=True)
+if len(selected_buoys) > 1:
+    fig1 = px.line(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)", color="Station",
+                   title="Multi-Buoy Wave Spectral Energy = Analogous to Multi-Rig MWD Gamma Intensity",
+                   labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
+                   template="plotly_dark")
 else:
-    st.info("Select one or more buoys to view wave spectral energy.")
+    fig1 = px.area(combined_df, x="Frequency (Hz)", y="Spectral Energy (m²/Hz)",
+                   title=f"Wave Spectral Energy for Buoy {selected_buoys[0]} = Analogous to MWD Gamma Ray Intensity",
+                   labels={"Spectral Energy (m²/Hz)": "Energy (m²/Hz)"},
+                   template="plotly_dark")
+fig1.update_layout(height=400)
+st.plotly_chart(fig1, use_container_width=True)
 
 # === MWD PULSE SIMULATOR ===
 st.subheader("Live MWD Mud Pulse Telemetry (6-Pulse Packet)")
@@ -208,73 +184,6 @@ else:
     frame.plotly_chart(fig, use_container_width=True)
     status.info("Simulator paused.")
 
-# === RIG OPS PANEL: LIVE ENVIRONMENTAL DATA (SAFE FOR NO BUOY) ===
-st.subheader("Rig Ops Panel — Live Environmental Conditions")
-
-if not selected_buoys:
-    st.warning("Select at least one buoy to see live rig conditions.")
-else:
-    placeholder = st.empty()
-
-    while True:
-        with placeholder.container():
-            buoy = selected_buoys[0]
-            try:
-                data = get_realtime_buoy_data(buoy)
-                # Format values
-                wave_height = f"{data['WVHT']:.1f} ft" if not pd.isna(data['WVHT']) else "N/A"
-                dom_period = f"{data['DPD']:.1f} s" if not pd.isna(data['DPD']) else "N/A"
-                wind_speed = f"{data['WSPD']:.1f} kt" if not pd.isna(data['WSPD']) else "N/A"
-                wind_gust = f"{data['GST']:.1f} kt" if not pd.isna(data['GST']) else "N/A"
-                air_temp = f"{(data['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(data['ATMP']) else "N/A"
-                water_temp = f"{(data['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(data['WTMP']) else "N/A"
-                pressure = f"{data['PRES']:.2f} inHg" if not pd.isna(data['PRES']) else "N/A"
-
-                # Nearest rig
-                buoy_lat, buoy_lon = buoy_coords[buoy]
-                nearest_rig = min(real_rigs, key=lambda r: haversine(buoy_lat, buoy_lon, r["lat"], r["lon"]))
-                dist = haversine(buoy_lat, buoy_lon, nearest_rig["lat"], nearest_rig["lon"])
-
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Wave Height", wave_height)
-                    st.metric("Dom. Period", dom_period)
-                with col2:
-                    st.metric("Wind Speed", wind_speed)
-                    st.metric("Wind Gust", wind_gust)
-                with col3:
-                    st.metric("Air Temp", air_temp)
-                    st.metric("Water Temp", water_temp)
-                with col4:
-                    st.metric("Nearest Rig", nearest_rig["name"], f"{dist:.1f} mi")
-                    st.metric("Pressure", pressure)
-
-                # Drilling Window
-                try:
-                    wh = float(wave_height.split()[0]) if wave_height != "N/A" else 99
-                    ws = float(wind_speed.split()[0]) if wind_speed != "N/A" else 99
-                    if wh < 6.0 and ws < 25:
-                        st.success("**DRILLING WINDOW: OPEN** — Safe to drill")
-                    elif wh < 8.0 and ws < 30:
-                        st.warning("**DRILLING WINDOW: MARGINAL** — Monitor closely")
-                    else:
-                        st.error("**DRILLING WINDOW: CLOSED** — High risk")
-                except:
-                    st.info("**DRILLING WINDOW: DATA PENDING**")
-
-            except Exception as e:
-                st.error(f"Buoy {buoy} data unavailable. Using simulation.")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Wave Height", "4.2 ft")
-                    st.metric("Wind Speed", "18 kt")
-                with col2:
-                    st.metric("Wind Gust", "22 kt")
-                    st.metric("Air Temp", "82.4°F")
-                st.success("**DRILLING WINDOW: OPEN**")
-
-        time.sleep(600)  # 10-minute refresh
-
 # === MAP + REAL RIGS ===
 st.subheader("Buoy & Active Rig Locations (Gulf of Mexico)")
 m = folium.Map(location=[25.0, -90.0], zoom_start=5, tiles="CartoDB dark_matter")
@@ -307,6 +216,10 @@ real_rigs = [
     {"name": "Sailfin FPSO", "operator": "Beacon Offshore", "lat": 27.80, "lon": -90.20, "status": "Active", "prod": "7k bbl/day"}
 ]
 
+if st.button("Update Rig & Buoy Status"):
+    st.cache_data.clear()
+    st.success("Rig and buoy data refreshed from NOAA & BOEM.")
+
 for rig in real_rigs:
     folium.CircleMarker(
         location=[rig["lat"], rig["lon"]],
@@ -319,32 +232,51 @@ for rig in real_rigs:
 st_folium(m, width=700, height=400)
 
 # === DISTANCE TABLE + INTEGRATION ===
-if selected_buoys:
-    st.subheader("Buoy-to-Rig Distance Analysis")
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371
-        dlat = radians(lat2 - lat1)
-        dlon = radians(lon2 - lon1)
-        a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-        c = 2 * atan2(sqrt(a), sqrt(1-a))
-        return R * c * 0.621371
+st.subheader("Buoy-to-Rig Distance Analysis")
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371  # km
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    return R * c * 0.621371  # miles
 
-    dist_data = []
-    for buoy in selected_buoys:
-        if buoy in buoy_coords:
-            b_lat, b_lon = buoy_coords[buoy]
-            for rig in real_rigs:
-                dist = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
-                dist_data.append({
-                    "Buoy": buoy,
-                    "Rig": rig["name"],
-                    "Distance (mi)": round(dist, 1),
-                    "Operator": rig["operator"]
-                })
+dist_data = []
+for buoy in selected_buoys:
+    if buoy in buoy_coords:
+        b_lat, b_lon = buoy_coords[buoy]
+        for rig in real_rigs:
+            dist = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
+            dist_data.append({
+                "Buoy": buoy,
+                "Rig": rig["name"],
+                "Distance (mi)": round(dist, 1),
+                "Operator": rig["operator"]
+            })
 
-    dist_df = pd.DataFrame(dist_data)
-    if not dist_df.empty:
-        st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
+dist_df = pd.DataFrame(dist_data)
+if not dist_df.empty:
+    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
+
+# === WAVE ENERGY vs DISTANCE (Integration) ===
+st.subheader("Wave Energy Impact on Nearby Rigs")
+energy_summary = combined_df.groupby("Station").apply(lambda x: x["Spectral Energy (m²/Hz)"].mean()).reset_index()
+energy_summary.columns = ["Buoy", "Avg Energy (m²/Hz)"]
+
+impact_data = []
+for _, row in energy_summary.iterrows():
+    if row["Buoy"] in selected_buoys:
+        b_lat, b_lon = buoy_coords[row["Buoy"]]
+        min_dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
+        impact_data.append({"Buoy": row["Buoy"], "Avg Energy": row["Avg Energy (m²/Hz)"], "Nearest Rig (mi)": round(min_dist, 1)})
+
+impact_df = pd.DataFrame(impact_data)
+if not impact_df.empty:
+    fig2 = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy",
+                      hover_data=["Buoy"], title="Wave Energy vs Rig Proximity",
+                      template="plotly_dark")
+    fig2.update_layout(height=400)
+    st.plotly_chart(fig2, use_container_width=True)
 
 # === CTA ===
 st.success("""
