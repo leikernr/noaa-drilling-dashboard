@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, sqrt, atan2
+import time
 
 # ========================================
 # PAGE CONFIG & TITLE
@@ -26,12 +27,12 @@ real_rigs = [
 ]
 
 buoy_info = {
-    "42001": ("42001 - Near Olympus TLP", 25.933, -86.733),
-    "42002": ("42002 - Central Gulf", 26.055, -90.333),
-    "42039": ("42039 - Near Thunder Hawk", 28.790, -86.007),
-    "42040": ("42040 - Eastern Gulf", 29.212, -88.208),
-    "42012": ("42012 - Central Gulf", 30.059, -87.548),
-    "42035": ("42035 - West Florida Shelf", 29.232, -84.650)
+    "42040": ("42040 - Mobile South (N)", 29.212, -88.208),
+    "42039": ("42039 - Pensacola (NE)", 28.790, -86.007),
+    "42055": ("42055 - Bay of Campeche (SE)", 26.000, -88.500),
+    "42001": ("42001 - Mid Gulf (S)", 25.933, -89.667),
+    "42002": ("42002 - West Gulf (SW)", 26.055, -90.333),
+    "42047": ("42047 - Keathley Canyon (NW)", 27.900, -88.022)
 }
 
 # Haversine distance (miles)
@@ -48,7 +49,6 @@ def haversine(lat1, lon1, lat2, lon2):
 # ========================================
 with st.sidebar:
     st.header("Controls")
-
     buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
@@ -57,20 +57,17 @@ with st.sidebar:
         max_selections=6,
         format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
-
     st.header("Why This Matters")
     st.write("""
-    - **Submarine Sonar** = Real-time signal processing  
-    - **MWD Drilling** = Same math: gamma, resistivity, torque  
-    - **Energy Tech** = Multi-source fusion for ops  
+    - **Submarine Sonar** = Real-time signal processing
+    - **MWD Drilling** = Same math: gamma, resistivity, torque
+    - **Energy Tech** = Multi-source fusion for ops
     """)
     st.info("NOAA 420xx → Gulf Fleet → Multi-rig sensor analogy")
-
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
     pulse_width = st.slider("Pulse Width (s)", 0.15, 0.35, 0.20, 0.05)
     pulse_speed = st.slider("Pulse Speed (s/bit)", 0.3, 1.0, 0.6, 0.1)
-
     if st.button("Refresh All"):
         st.cache_data.clear()
         st.rerun()
@@ -85,33 +82,26 @@ if not selected_buoys:
 def fetch_realtime(station_id):
     url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.txt"
     try:
-        # Read with space delimiter, skip header comments
         df = pd.read_csv(url, delim_whitespace=True, comment='#', na_values=['MM', '99.0', '999'], engine='python')
         if df.empty or len(df.columns) < 5:
             raise ValueError("Invalid data format")
-        
-        # Use latest row
         latest = df.iloc[-1]
-
-        # Safely extract values
         def safe_float(col, default_range):
             val = latest.get(col)
             if pd.isna(val) or val == 999 or val == 99.0:
                 return np.random.uniform(*default_range)
             return float(val)
-
         return {
-            "WVHT": safe_float("WVHT", (1.0, 8.0)),      # ft
-            "DPD": safe_float("DPD", (4.0, 12.0)),       # sec
-            "WSPD": safe_float("WSPD", (5.0, 25.0)),     # kt
-            "WD": safe_float("WD", (0, 360)),            # degrees
-            "PRES": safe_float("PRES", (29.8, 30.3)),     # inHg
-            "ATMP": safe_float("ATMP", (65, 90)),        # °F
-            "WTMP": safe_float("WTMP", (72, 86)),        # °F
-            "MWD": safe_float("MWD", (0, 360))           # degrees
+            "WVHT": safe_float("WVHT", (1.0, 8.0)),
+            "DPD": safe_float("DPD", (4.0, 12.0)),
+            "WSPD": safe_float("WSPD", (5.0, 25.0)),
+            "WD": safe_float("WD", (0, 360)),
+            "PRES": safe_float("PRES", (29.8, 30.3)),
+            "ATMP": safe_float("ATMP", (65, 90)),
+            "WTMP": safe_float("WTMP", (72, 86)),
+            "MWD": safe_float("MWD", (0, 360))
         }
-    except Exception as e:
-        # Full fallback only if fetch completely fails
+    except:
         return {
             "WVHT": np.random.uniform(2.0, 6.0),
             "DPD": np.random.uniform(6.0, 10.0),
@@ -149,14 +139,13 @@ def fetch_spectral(station_id):
     return df
 
 # ========================================
-# 1. NOAA BUOY DATA — 100% REAL OR REALISTIC
+# 1. NOAA BUOY DATA — 100% STABLE
 # ========================================
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
 primary = selected_buoys[0]
 rt = fetch_realtime(primary)
 b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
-# Always valid numbers
 wave_height = f"{rt['WVHT']:.1f} ft"
 dom_period = f"{rt['DPD']:.1f} s"
 wind_speed = f"{rt['WSPD']:.1f} kt"
@@ -165,7 +154,6 @@ pressure = f"{rt['PRES']:.2f} inHg"
 wave_dir = f"{int(rt['MWD'])}°"
 sea_temp = f"{rt['WTMP']:.1f}°F"
 air_temp = f"{rt['ATMP']:.1f}°F"
-
 current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
 humidity = f"{np.random.randint(60, 95)}%"
 visibility = f"{np.random.uniform(5, 15):.1f} mi"
@@ -200,15 +188,11 @@ ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
 fig_mwd = go.Figure()
 fig_mwd.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
                              mode='lines', name='MWD Pulse', line=dict(color='cyan')))
-fig_mwd.update_layout(
-    title="MWD Pulse Downhole (Analog to Resistivity)",
-    height=300,
-    template="plotly_dark"
-)
+fig_mwd.update_layout(title="MWD Pulse Downhole (Analog to Resistivity)", height=300, template="plotly_dark")
 st.plotly_chart(fig_mwd, use_container_width=True)
 
 # ========================================
-# 3. MWD 6-PACK TELEMETRY — 1 WINDOW, LIVE
+# 3. MWD 6-PACK TELEMETRY — SMOOTH, NO RERUN
 # ========================================
 st.markdown("## MWD 6-Pack Telemetry")
 
@@ -232,19 +216,14 @@ def add_pulse(t, center, width, height):
     signal[mask_flat] = height
     signal[mask_fall] = height * (1 - (t[mask_fall] - (center + rise + flat)) / fall)
 
-# 2 clearing pulses
 add_pulse(t_full, clear_width / 2, clear_width, 1.0)
 add_pulse(t_full, clear_width + 0.5, clear_width, 1.0)
-
-# 4 data bits
 for i, bit in enumerate(bit_pattern):
     center = 2 * clear_width + 0.5 + i * bit_spacing + pulse_width / 2
     height = 0.8 if bit == '1' else -0.8
     add_pulse(t_full, center, pulse_width, height)
-
 signal += np.random.normal(0, 0.08, len(t_full))
 
-# Session state
 if 'running' not in st.session_state:
     st.session_state.running = False
 if 'offset' not in st.session_state:
@@ -258,15 +237,16 @@ if st.button("Start Live Telemetry" if not st.session_state.running else "Stop L
 plot_placeholder = st.empty()
 
 if st.session_state.running:
-    st.session_state.offset = (st.session_state.offset + 0.02) % packet_duration
-    t_shifted = (t_full - st.session_state.offset + packet_duration) % packet_duration
-    df_plot = pd.DataFrame({"Time (s)": t_shifted, "Amplitude": signal})
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
-    fig.add_hline(y=0, line_dash="dot", line_color="gray")
-    fig.update_layout(height=300, template="plotly_dark", showlegend=False, xaxis_range=[0, packet_duration])
-    plot_placeholder.plotly_chart(fig, use_container_width=True)
-    st.rerun()
+    while st.session_state.running:
+        st.session_state.offset = (st.session_state.offset + 0.02) % packet_duration
+        t_shifted = (t_full - st.session_state.offset + packet_duration) % packet_duration
+        df_plot = pd.DataFrame({"Time (s)": t_shifted, "Amplitude": signal})
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
+        fig.update_layout(height=300, template="plotly_dark", showlegend=False, xaxis_range=[0, packet_duration])
+        plot_placeholder.plotly_chart(fig, use_container_width=True)
+        time.sleep(0.02)
 else:
     df_static = pd.DataFrame({"Time (s)": t_full, "Amplitude": signal})
     fig_static = go.Figure()
@@ -297,7 +277,7 @@ if not impact_df.empty:
 # ========================================
 # 5. GULF OF MEXICO — RIGS & BUOYS
 # ========================================
-st.markdown("## Gulf of Mexico — Rigs & Buoeys")
+st.markdown("## Gulf of Mexico — Rigs & Buoys")
 m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
 for rig in real_rigs:
     folium.CircleMarker([rig["lat"], rig["lon"]], radius=12, popup=rig["name"], color="orange", fill=True).add_to(m)
@@ -310,10 +290,7 @@ st_folium(m, width=1000, height=500, key="map")
 # FOOTER / CTA
 # ========================================
 st.success("""
-**This is how I processed sonar at 5,000 ft below sea.**  
-**Now I'll do it for your rig at 55,000 ft.**  
+**This is how I processed sonar at 5,000 ft below sea.**
+**Now I'll do it for your rig at 55,000 ft.**
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
-
-
-
