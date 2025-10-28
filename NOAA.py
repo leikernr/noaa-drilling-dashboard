@@ -26,12 +26,13 @@ real_rigs = [
 ]
 
 buoy_info = {
-    "42001": ("42001 - Near Olympus TLP", 25.933, -86.733),
-    "42002": ("42002 - Central Gulf", 26.055, -90.333),
-    "42039": ("42039 - Near Thunder Hawk", 28.790, -86.007),
-    "42040": ("42040 - Eastern Gulf", 29.212, -88.208),
-    "42012": ("42012 - Central Gulf", 30.059, -87.548),
-    "42035": ("42035 - West Florida Shelf", 29.232, -84.650)
+    "42040": ("42040 - Mobile South (N)", 29.212, -88.208),
+    "42039": ("42039 - Pensacola (NE)", 28.790, -86.007),
+    "42055": ("42055 - Bay of Campeche (SE)", 26.000, -88.500),
+    "42001": ("42001 - Mid Gulf (S)", 25.933, -89.667),
+    "42002": ("42002 - West Gulf (SW)", 26.055, -90.333),
+    "42047": ("42047 - Keathley Canyon (NW)", 27.900, -88.022)
+
 }
 
 # Haversine distance (miles)
@@ -314,3 +315,4 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
+
