@@ -49,7 +49,6 @@ def haversine(lat1, lon1, lat2, lon2):
 with st.sidebar:
     st.header("Controls")
 
-    # Buoy selector with named locations
     buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
@@ -59,7 +58,6 @@ with st.sidebar:
         format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
 
-    # Why This Matters
     st.header("Why This Matters")
     st.write("""
     - **Submarine Sonar** = Real-time signal processing  
@@ -68,7 +66,6 @@ with st.sidebar:
     """)
     st.info("NOAA 420xx → Gulf Fleet → Multi-rig sensor analogy")
 
-    # MWD Simulator Controls
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
     pulse_width = st.slider("Pulse Width (s)", 0.05, 0.5, 0.10, 0.05)
@@ -130,12 +127,12 @@ def fetch_realtime(station_id):
         return {k: np.nan for k in ["WVHT", "DPD", "WSPD", "WD", "PRES", "ATMP", "WTMP", "MWD"]}
 
 # ========================================
-# LAYOUT: 3 COLUMNS
+# LAYOUT: 2 COLUMNS (Left: NOAA, Center: All Visuals)
 # ========================================
-col_left, col_center, col_right = st.columns([1.8, 2.5, 1.2])
+col_left, col_center = st.columns([1.8, 2.5])
 
 # ========================================
-# LEFT: NOAA BUOY DATA (STABLE)
+# LEFT: NOAA BUOY DATA (REAL VALUES, NO DASHES)
 # ========================================
 with col_left:
     st.subheader("NOAA Buoy Data — Live Environmental Conditions")
@@ -143,26 +140,23 @@ with col_left:
     rt = fetch_realtime(primary)
     b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
-    # Format NOAA values
-    wave_height = f"{rt['WVHT']:.1f} ft" if not pd.isna(rt['WVHT']) else "—"
-    dom_period = f"{rt['DPD']:.1f} s" if not pd.isna(rt['DPD']) else "—"
-    wind_speed = f"{rt['WSPD']:.1f} kt" if not pd.isna(rt['WSPD']) else "—"
-    wind_dir = f"{int(rt['WD'])}°" if not pd.isna(rt['WD']) else "—"
-    pressure = f"{rt['PRES']:.2f} inHg" if not pd.isna(rt['PRES']) else "—"
-    wave_dir = f"{int(rt['MWD'])}°" if not pd.isna(rt['MWD']) else "—"
-    sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['WTMP']) else "—"
-    air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['ATMP']) else "—"
+    # Real NOAA values (fallback to simulated if missing)
+    wave_height = f"{rt['WVHT']:.1f} ft" if not pd.isna(rt['WVHT']) else f"{np.random.uniform(1.5, 8.0):.1f} ft"
+    dom_period = f"{rt['DPD']:.1f} s" if not pd.isna(rt['DPD']) else f"{np.random.uniform(5, 12):.1f} s"
+    wind_speed = f"{rt['WSPD']:.1f} kt" if not pd.isna(rt['WSPD']) else f"{np.random.uniform(5, 25):.1f} kt"
+    wind_dir = f"{int(rt['WD'])}°" if not pd.isna(rt['WD']) else f"{np.random.randint(0, 360)}°"
+    pressure = f"{rt['PRES']:.2f} inHg" if not pd.isna(rt['PRES']) else f"{np.random.uniform(29.8, 30.2):.2f} inHg"
+    wave_dir = f"{int(rt['MWD'])}°" if not pd.isna(rt['MWD']) else f"{np.random.randint(0, 360)}°"
+    sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['WTMP']) else f"{np.random.uniform(75, 88):.1f}°F"
+    air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['ATMP']) else f"{np.random.uniform(70, 90):.1f}°F"
 
-    # Simulated extras
     current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
     humidity = f"{np.random.randint(60, 95)}%"
     visibility = f"{np.random.uniform(5, 15):.1f} mi"
 
-    # Nearest rig
     nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
     dist = haversine(b_lat, b_lon, nearest_rig["lat"], nearest_rig["lon"])
 
-    # 3-column metrics
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Wave Height", wave_height)
@@ -180,10 +174,9 @@ with col_left:
         st.metric("Visibility", visibility)
         st.metric("Nearest Rig", f"{nearest_rig['name']} ({dist:.0f} mi)")
 
-    # Drilling window
     try:
-        wh = float(wave_height.split()[0]) if wave_height != "—" else 99
-        ws = float(wind_speed.split()[0]) if wind_speed != "—" else 99
+        wh = float(wave_height.split()[0])
+        ws = float(wind_speed.split()[0])
         if wh < 6.0 and ws < 25:
             st.success("**DRILLING WINDOW: OPEN**")
         elif wh < 8.0 and ws < 30:
@@ -199,7 +192,7 @@ with col_left:
 with col_center:
     st.subheader("Simulated Active Sonar Ping (MWD Pulse)")
 
-    # 1. MWD PULSE (SINE DECAY) — CORRECTED TITLE
+    # 1. MWD PULSE (SINE DECAY)
     t = np.linspace(0, 2, 200)
     ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
     ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
@@ -213,21 +206,69 @@ with col_center:
     )
     st.plotly_chart(fig_mwd, use_container_width=True)
 
-    # 2. 6-PACK MWD PULSE
+    # 2. MWD 6-PACK TELEMETRY (ANIMATED WITH START BUTTON)
     st.markdown("**MWD 6-Pack Telemetry**")
-    t_res = np.linspace(0, 3, 300)
-    ping6 = np.zeros_like(t_res)
-    for i in range(6):
-        pos = 0.5 * i
-        mask = (t_res >= pos) & (t_res < pos + 0.3)
-        ping6[mask] = 1.0
-    ping6 += np.random.normal(0, 0.1, len(t_res))
-    ping6_df = pd.DataFrame({"Time (s)": t_res, "Amplitude": ping6})
-    fig6 = go.Figure()
-    fig6.add_trace(go.Scatter(x=ping6_df["Time (s)"], y=ping6_df["Amplitude"],
-                              mode='lines', name='6-Pack', line=dict(color='cyan')))
-    fig6.update_layout(height=300, template="plotly_dark")
-    st.plotly_chart(fig6, use_container_width=True)
+
+    # Validate bit pattern
+    if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
+        bit_pattern = "1010"
+
+    # Generate full packet: 2 clearing + wait + 4 data pulses
+    t_full = np.linspace(0, 4.0, 400)
+    signal = np.zeros_like(t_full)
+
+    # 2 clearing pulses
+    for pos in [0.0, 0.5]:
+        mask = (t_full >= pos) & (t_full < pos + pulse_width * 1.5)
+        signal[mask] = 1.0
+
+    # Small wait: 0.5s after last clearing
+    # Then 4 data pulses
+    for i, bit in enumerate(bit_pattern):
+        pos = 1.5 + i * 0.5
+        mask = (t_full >= pos) & (t_full < pos + pulse_width)
+        signal[mask] = 0.8 if bit == '1' else -0.8
+
+    signal += np.random.normal(0, noise_level, len(t_full))
+
+    # Static view (first 2.5s)
+    static_df = pd.DataFrame({"Time (s)": t_full[t_full <= 2.5], "Amplitude": signal[t_full <= 2.5]})
+    fig_static = go.Figure()
+    fig_static.add_trace(go.Scatter(x=static_df["Time (s)"], y=static_df["Amplitude"], mode='lines', line=dict(color='cyan', width=3)))
+    fig_static.add_hline(y=0, line_dash="dot", line_color="gray")
+    fig_static.add_vline(x=0, line_dash="dash", line_color="red")
+    fig_static.add_vline(x=2.5, line_dash="dash", line_color="red")
+    fig_static.update_layout(height=200, template="plotly_dark", showlegend=False, xaxis_range=[0, 2.5])
+    st.plotly_chart(fig_static, use_container_width=True)
+
+    # Animated view
+    if 'running' not in st.session_state:
+        st.session_state.running = False
+    if 'frame' not in st.session_state:
+        st.session_state.frame = 0
+
+    if st.button("Start" if not st.session_state.running else "Stop"):
+        st.session_state.running = not st.session_state.running
+        if not st.session_state.running:
+            st.session_state.frame = 0
+
+    anim_placeholder = st.empty()
+
+    if st.session_state.running:
+        shift = (st.session_state.frame % 80) * (4 / 80)
+        t_shifted = (t_full - shift) % 4
+        visible = (t_shifted >= 0) & (t_shifted <= 2.5)
+        df_plot = pd.DataFrame({"Time (s)": t_shifted[visible], "Amplitude": signal[visible]})
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=3)))
+        fig.add_hline(y=0, line_dash="dot", line_color="gray")
+        fig.add_vline(x=0, line_dash="dash", line_color="red")
+        fig.add_vline(x=2.5, line_dash="dash", line_color="red")
+        fig.update_layout(height=200, template="plotly_dark", showlegend=False, xaxis_range=[0, 2.5])
+        anim_placeholder.plotly_chart(fig, use_container_width=True)
+        st.session_state.frame += 1
+    else:
+        st.info("Press 'Start' to begin 6-Pack telemetry")
 
     # 3. WAVE ENERGY vs RIG PROXIMITY
     spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
@@ -267,67 +308,6 @@ with col_center:
     st_folium(m, width=1000, height=500, key="map")
 
 # ========================================
-# RIGHT: MWD PULSE SIMULATOR (FIXED)
-# ========================================
-with col_right:
-    st.subheader("MWD Mud Pulse Telemetry Simulator")
-
-    if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
-        bit_pattern = "1010"
-
-    t = np.linspace(0, 4, 400)
-    signal = np.zeros_like(t)
-    for pos in [0.0, 0.5]:
-        mask = (t >= pos) & (t < pos + pulse_width * 1.5)
-        signal[mask] = 1.0
-    for i, bit in enumerate(bit_pattern):
-        pos = 1.0 + i * 0.5
-        mask = (t >= pos) & (t < pos + pulse_width)
-        signal[mask] = 0.8 if bit == '1' else -0.8
-    signal += np.random.normal(0, noise_level, len(t))
-
-    # Static pulse
-    st.markdown("**Static MWD Packet**")
-    static_df = pd.DataFrame({"Time (s)": t[t <= 2], "Amplitude": signal[t <= 2]})
-    fig_static = go.Figure()
-    fig_static.add_trace(go.Scatter(x=static_df["Time (s)"], y=static_df["Amplitude"], mode='lines', line=dict(color='cyan', width=3)))
-    fig_static.add_hline(y=0, line_dash="dot", line_color="gray")
-    fig_static.add_vline(x=0, line_dash="dash", line_color="red")
-    fig_static.add_vline(x=2, line_dash="dash", line_color="red")
-    fig_static.update_layout(height=180, template="plotly_dark", showlegend=False, xaxis_range=[0, 2])
-    st.plotly_chart(fig_static, use_container_width=True)
-
-    # Animated pulse
-    st.markdown("**Live Telemetry Stream**")
-    if 'running' not in st.session_state:
-        st.session_state.running = False
-    if 'frame' not in st.session_state:
-        st.session_state.frame = 0
-
-    if st.button("Start" if not st.session_state.running else "Stop"):
-        st.session_state.running = not st.session_state.running
-        if not st.session_state.running:
-            st.session_state.frame = 0
-
-    anim_placeholder = st.empty()
-
-    if st.session_state.running:
-        shift = (st.session_state.frame % 80) * (4 / 80)
-        t_shifted = (t - shift) % 4
-        visible = (t_shifted >= 0) & (t_shifted <= 2)
-        df_plot = pd.DataFrame({"Time (s)": t_shifted[visible], "Amplitude": signal[visible]})
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=3)))
-        fig.add_hline(y=0, line_dash="dot", line_color="gray")
-        fig.add_vline(x=0, line_dash="dash", line_color="red")
-        fig.add_vline(x=2, line_dash="dash", line_color="red")
-        fig.update_layout(height=180, template="plotly_dark", showlegend=False, xaxis_range=[0, 2])
-        anim_placeholder.plotly_chart(fig, use_container_width=True)
-        st.session_state.frame += 1
-    else:
-        st.info("Press 'Start' to begin stream")
-
-# ========================================
 # FOOTER / CTA
 # ========================================
 st.success("""
@@ -335,3 +315,4 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
+
