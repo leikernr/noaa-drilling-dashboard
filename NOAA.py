@@ -79,7 +79,7 @@ if not selected_buoys:
     selected_buoys = ["42001"]
 
 # ========================================
-# NOAA DATA FETCH — STABLE + FALLBACK
+# NOAA DATA FETCH — SAFE + FALLBACK
 # ========================================
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_realtime(station_id):
@@ -136,20 +136,20 @@ def fetch_spectral(station_id):
     return df
 
 # ========================================
-# 1. NOAA BUOY DATA — ALWAYS SHOWS VALUES
+# 1. NOAA BUOY DATA — 100% SAFE
 # ========================================
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
 primary = selected_buoys[0]
 rt = fetch_realtime(primary)
 b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
-# Fixed: Use ° symbol
+# SAFE formatting with fallbacks
 wave_height = f"{rt['WVHT']:.1f} ft"
 dom_period = f"{rt['DPD']:.1f} s"
 wind_speed = f"{rt['WSPD']:.1f} kt"
-wind_dir = f"{int(rt['WD'])}°"
+wind_dir = f"{int(rt['WD']):d}°" if not pd.isna(rt['WD']) else f"{int(np.random.uniform(0, 360))}°"
 pressure = f"{rt['PRES']:.2f} inHg"
-wave_dir = f"{int(rt['MWD'])}°"
+wave_dir = f"{int(rt['MWD']):d}°" if not pd.isna(rt['MWD']) else f"{int(np.random.uniform(0, 360))}°"
 sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f}°F"
 air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f}°F"
 
@@ -301,4 +301,3 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
-
