@@ -88,7 +88,7 @@ def fetch_realtime(station_id):
         latest = df.iloc[-1]
         def safe_float(col, default_range):
             val = latest.get(col)
-            if pd.isna(val) or val == 999 or val == 99.0:
+            if pd.isna(val) or val in [999, 99.0]:
                 return np.random.uniform(*default_range)
             return float(val)
         return {
@@ -149,13 +149,13 @@ b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 wave_height = f"{rt['WVHT']:.1f} ft"
 dom_period = f"{rt['DPD']:.1f} s"
 wind_speed = f"{rt['WSPD']:.1f} kt"
-wind_dir = f"{int(rt['WD'])}°"
+wind_dir = f"{int(rt['WD'])} degrees"
 pressure = f"{rt['PRES']:.2f} inHg"
-wave_dir = f"{int(rt['MWD'])}°"
-sea_temp = f"{rt['WTMP']:.1f}°F"
-air_temp = f"{rt['ATMP']:.1f}°F"
+wave_dir = f"{int(rt['MWD'])} degrees"
+sea_temp = f"{rt['WTMP']:.1f} degrees F"
+air_temp = f"{rt['ATMP']:.1f} degrees F"
 current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
-humidity = f"{np.random.randint(60, 95)}%"
+humidity = f"{np.random.randint(60, 95)} percent"
 visibility = f"{np.random.uniform(5, 15):.1f} mi"
 
 nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
@@ -275,15 +275,79 @@ if not impact_df.empty:
     st.plotly_chart(fig_wave, use_container_width=True)
 
 # ========================================
-# 5. GULF OF MEXICO — RIGS & BUOYS
+# 5. GULF OF MEXICO — RIGS & BUOYS (LIVE NOAA POPUP DATA)
 # ========================================
 st.markdown("## Gulf of Mexico — Rigs & Buoys")
+
+# Pre-fetch ALL buoy data once (cached)
+buoy_data = {}
+for bid in selected_buoys:
+    buoy_data[bid] = fetch_realtime(bid)
+
 m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
+
+# Rigs
 for rig in real_rigs:
-    folium.CircleMarker([rig["lat"], rig["lon"]], radius=12, popup=rig["name"], color="orange", fill=True).add_to(m)
+    folium.CircleMarker(
+        [rig["lat"], rig["lon"]], 
+        radius=12, 
+        popup=folium.Popup(f"<b>{rig['name']}</b>", max_width=200),
+        color="orange", 
+        fill=True,
+        fillOpacity=0.9
+    ).add_to(m)
+
+# Buoys with LIVE NOAA data in popup
 for bid in selected_buoys:
     lat, lon = buoy_info[bid][1], buoy_info[bid][2]
-    folium.CircleMarker([lat, lon], radius=10, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
+    rt = buoy_data[bid]
+    is_active = (bid == primary)
+
+    # Format live data
+    popup_html = f"""
+    <div style="font-family: monospace; min-width: 180px;">
+        <b>{bid}</b> — <i>{buoy_info[bid][0]}</i><br>
+        <hr style="margin:4px 0;">
+        <b>Wave Ht:</b> {rt['WVHT']:.1f} ft<br>
+        <b>Period:</b> {rt['DPD']:.1f} s<br>
+        <b>Wind:</b> {rt['WSPD']:.1f} kt @ {int(rt['WD'])} degrees<br>
+        <b>Pressure:</b> {rt['PRES']:.2f} inHg<br>
+        <b>Sea Temp:</b> {rt['WTMP']:.1f} degrees F<br>
+    """
+    if is_active:
+        popup_html += '<br><span style="color:lime; font-weight:bold;">ACTIVE DATA SOURCE</span>'
+    popup_html += "</div>"
+
+    # Active buoy: lime, larger, pulsing ring
+    if is_active:
+        folium.CircleMarker(
+            [lat, lon],
+            radius=18,
+            popup=folium.Popup(popup_html, max_width=300),
+            color="lime",
+            fill=True,
+            fillOpacity=0.9,
+            weight=3
+        ).add_to(m)
+        folium.Circle(
+            [lat, lon],
+            radius=35000,  # ~21 mi
+            color="lime",
+            weight=2,
+            fill=False,
+            dashArray='10,10',
+            opacity=0.7
+        ).add_to(m)
+    else:
+        folium.CircleMarker(
+            [lat, lon],
+            radius=11,
+            popup=folium.Popup(popup_html, max_width=300),
+            color="cyan",
+            fill=True,
+            fillOpacity=0.8
+        ).add_to(m)
+
 st_folium(m, width=1000, height=500, key="map")
 
 # ========================================
