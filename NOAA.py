@@ -7,16 +7,15 @@ import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, sqrt, atan2
-import time
 
 # === PAGE CONFIG ===
 st.set_page_config(page_title="NOAA RigOps Dashboard", layout="wide")
 
 # === TITLE ===
-st.title("🌊 NOAA Offshore Drilling Dashboard")
+st.title("NOAA Offshore Drilling Dashboard")
 st.caption("Real-time marine data for offshore rig operations")
 
-# === RIGS & BUOYS (6 CLOSEST ONLY) ===
+# === RIGS & BUOYS (6 CLOSEST) ===
 real_rigs = [
     {"name": "Olympus TLP", "lat": 27.22, "lon": -90.00},
     {"name": "Mars TLP", "lat": 27.18, "lon": -89.25},
@@ -24,13 +23,13 @@ real_rigs = [
     {"name": "Appomattox", "lat": 27.00, "lon": -88.34},
 ]
 
-buoy_coords = {
-    "42001": (25.933, -86.733),
-    "42002": (26.055, -90.333),
-    "42039": (28.790, -86.007),
-    "42040": (29.212, -88.208),
-    "42012": (30.059, -87.548),
-    "42035": (29.232, -84.650)
+buoy_info = {
+    "42001": ("42001 - Near Olympus TLP", 25.933, -86.733),
+    "42002": ("42002 - Central Gulf", 26.055, -90.333),
+    "42039": ("42039 - Near Thunder Hawk", 28.790, -86.007),
+    "42040": ("42040 - Eastern Gulf", 29.212, -88.208),
+    "42012": ("42012 - Central Gulf", 30.059, -87.548),
+    "42035": ("42035 - West Florida Shelf", 29.232, -84.650)
 }
 
 # Haversine (miles)
@@ -44,14 +43,14 @@ def haversine(lat1, lon1, lat2, lon2):
 
 # === SIDEBAR ===
 with st.sidebar:
-    st.header("⚙️ Controls")
-    buoy_options = {f"{bid} - Gulf": bid for bid in buoy_coords.keys()}
+    st.header("Controls")
+    buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
         options=list(buoy_options.values()),
         default=["42001"],
         max_selections=6,
-        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
+        format_func=lambda x: buoy_options[x]
     )
 
     st.header("Why This Matters")
@@ -123,12 +122,12 @@ def fetch_realtime(station_id):
 # === LAYOUT: 3 COLUMNS ===
 col_left, col_center, col_right = st.columns([1.8, 2, 1.2])
 
-# === LEFT: RIG OPS PANEL (REAL NOAA DATA) ===
+# === LEFT: RIG OPS PANEL (REAL NOAA DATA PER BUOY) ===
 with col_left:
-    st.subheader("⚓ Rig Ops — Live Environmental Conditions")
+    st.subheader("Rig Ops — Live Environmental Conditions")
     primary = selected_buoys[0]
     rt = fetch_realtime(primary)
-    b_lat, b_lon = buoy_coords[primary]
+    b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
     wave_height = f"{rt['WVHT']:.1f} ft" if not pd.isna(rt['WVHT']) else "—"
     dom_period = f"{rt['DPD']:.1f} s" if not pd.isna(rt['DPD']) else "—"
@@ -175,26 +174,43 @@ with col_left:
     except:
         st.info("**DRILLING WINDOW: PENDING**")
 
-# === CENTER: MAP (ALWAYS ON) + WAVE ENERGY + 6-PACK PULSE ===
+# === CENTER: RESISTIVITY (SINE) + 6-PACK + WAVE ENERGY + DISTANCE + MAP ===
 with col_center:
-    st.subheader("🗺️ Map + Wave Energy + Resistivity Pulse")
+    st.subheader("Resistivity Pulse + Wave Energy + Map")
 
-    # MAP — 100% ALWAYS ON
-    m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
-    for rig in real_rigs:
-        folium.CircleMarker([rig["lat"], rig["lon"]], radius=10, popup=rig["name"], color="orange", fill=True).add_to(m)
-    for bid in selected_buoys:
-        lat, lon = buoy_coords[bid]
-        folium.CircleMarker([lat, lon], radius=8, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
-    st_folium(m, width=700, height=350, key="map")
+    # 1. ORIGINAL SINE DECAY PULSE
+    t = np.linspace(0, 2, 200)
+    ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
+    ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+                              mode='lines', name='Resistivity Pulse', line=dict(color='cyan')))
+    fig2.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
+    st.plotly_chart(fig2, use_container_width=True)
 
-    # WAVE ENERGY vs RIG PROXIMITY
+    # 2. 6-PACK PULSE
+    st.markdown("**Resistivity Tool Pulse (6-Pack)**")
+    t_res = np.linspace(0, 3, 300)
+    ping6 = np.zeros_like(t_res)
+    for i in range(6):
+        pos = 0.5 * i
+        mask = (t_res >= pos) & (t_res < pos + 0.3)
+        ping6[mask] = 1.0
+    ping6 += np.random.normal(0, 0.1, len(t_res))
+    ping6_df = pd.DataFrame({"Time (s)": t_res, "Amplitude": ping6})
+    fig6 = go.Figure()
+    fig6.add_trace(go.Scatter(x=ping6_df["Time (s)"], y=ping6_df["Amplitude"],
+                              mode='lines', name='6-Pack', line=dict(color='cyan')))
+    fig6.update_layout(height=300, template="plotly_dark")
+    st.plotly_chart(fig6, use_container_width=True)
+
+    # 3. WAVE ENERGY vs RIG PROXIMITY
     spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
     combined_df = pd.concat(spectral_dfs) if spectral_dfs else pd.DataFrame()
     impact_rows = []
     for bid in selected_buoys:
         energy = combined_df[combined_df["Station"] == bid]["Spectral Energy (m²/Hz)"].mean()
-        b_lat, b_lon = buoy_coords[bid]
+        b_lat, b_lon = buoy_info[bid][1], buoy_info[bid][2]
         dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
         impact_rows.append({"Buoy": bid, "Avg Energy": round(energy, 2) if not pd.isna(energy) else np.nan, "Nearest Rig (mi)": round(dist, 1)})
     impact_df = pd.DataFrame(impact_rows).dropna()
@@ -204,24 +220,27 @@ with col_center:
         fig_wave.update_layout(height=300)
         st.plotly_chart(fig_wave, use_container_width=True)
 
-    # 6-PACK RESISTIVITY PULSE
-    st.markdown("**Resistivity Tool Pulse (6-Pack)**")
-    t_res = np.linspace(0, 3, 300)
-    ping = np.zeros_like(t_res)
-    for i in range(6):
-        pos = 0.5 * i
-        mask = (t_res >= pos) & (t_res < pos + 0.3)
-        ping[mask] = 1.0
-    ping += np.random.normal(0, 0.1, len(t_res))
-    ping_df = pd.DataFrame({"Time (s)": t_res, "Amplitude": ping})
+    # 4. DISTANCE TABLE
+    st.subheader("Buoy-to-Rig Distances")
+    dist_rows = []
+    for bid in selected_buoys:
+        b_lat, b_lon = buoy_info[bid][1], buoy_info[bid][2]
+        for rig in real_rigs:
+            d = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
+            dist_rows.append({"Buoy": bid, "Rig": rig["name"], "Distance (mi)": round(d, 1)})
+    dist_df = pd.DataFrame(dist_rows)
+    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
 
-    fig_resistivity = go.Figure()
-    fig_resistivity.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
-                                         mode='lines', name='Resistivity Pulse', line=dict(color='cyan')))
-    fig_resistivity.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
-    st.plotly_chart(fig_resistivity, use_container_width=True)
+    # 5. MAP — ALWAYS ON
+    m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
+    for rig in real_rigs:
+        folium.CircleMarker([rig["lat"], rig["lon"]], radius=10, popup=rig["name"], color="orange", fill=True).add_to(m)
+    for bid in selected_buoys:
+        lat, lon = buoy_info[bid][1], buoy_info[bid][2]
+        folium.CircleMarker([lat, lon], radius=8, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
+    st_folium(m, width=700, height=350, key="map")
 
-# === RIGHT: MWD — STATIC + ANIMATED ===
+# === RIGHT: MWD — SINGLE SECTION ===
 with col_right:
     st.subheader("MWD Mud Pulse Telemetry")
 
@@ -239,7 +258,7 @@ with col_right:
         signal[mask] = 0.8 if bit == '1' else -0.8
     signal += np.random.normal(0, noise_level, len(t))
 
-    # STATIC PULSE (ALWAYS ON)
+    # STATIC PULSE
     st.markdown("**Static MWD Packet**")
     static_df = pd.DataFrame({"Time (s)": t[t <= 2], "Amplitude": signal[t <= 2]})
     fig_static = go.Figure()
@@ -281,20 +300,10 @@ with col_right:
     else:
         st.info("Press 'Start' to begin stream")
 
-# === DISTANCE TABLE ===
-st.subheader("📏 Buoy-to-Rig Distances")
-dist_rows = []
-for bid in selected_buoys:
-    b_lat, b_lon = buoy_coords[bid]
-    for rig in real_rigs:
-        d = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
-        dist_rows.append({"Buoy": bid, "Rig": rig["name"], "Distance (mi)": round(d, 1)})
-dist_df = pd.DataFrame(dist_rows)
-st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
-
 # === CTA ===
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I'll do it for your rig at 55,000 ft.**  
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
+
