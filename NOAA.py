@@ -8,14 +8,16 @@ import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, sqrt, atan2
 
-# === PAGE CONFIG ===
+# ========================================
+# PAGE CONFIG & TITLE
+# ========================================
 st.set_page_config(page_title="NOAA RigOps Dashboard", layout="wide")
-
-# === TITLE ===
 st.title("NOAA Offshore Drilling Dashboard")
-st.caption("Real-time marine data for offshore rig operations")
+st.caption("Real-time marine data fused with MWD telemetry simulation")
 
-# === RIGS & BUOYS (6 CLOSEST) ===
+# ========================================
+# RIGS & BUOYS (6 CLOSEST)
+# ========================================
 real_rigs = [
     {"name": "Olympus TLP", "lat": 27.22, "lon": -90.00},
     {"name": "Mars TLP", "lat": 27.18, "lon": -89.25},
@@ -32,7 +34,7 @@ buoy_info = {
     "42035": ("42035 - West Florida Shelf", 29.232, -84.650)
 }
 
-# Haversine (miles)
+# Haversine distance (miles)
 def haversine(lat1, lon1, lat2, lon2):
     R = 3958.8
     dlat = radians(lat2 - lat1)
@@ -41,10 +43,13 @@ def haversine(lat1, lon1, lat2, lon2):
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return R * c
 
-# === SIDEBAR ===
+# ========================================
+# SIDEBAR: CONTROLS
+# ========================================
 with st.sidebar:
     st.header("Controls")
 
+    # Buoy selector with named locations
     buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
@@ -54,6 +59,7 @@ with st.sidebar:
         format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
 
+    # Why This Matters
     st.header("Why This Matters")
     st.write("""
     - **Submarine Sonar** = Real-time signal processing  
@@ -62,6 +68,7 @@ with st.sidebar:
     """)
     st.info("NOAA 420xx → Gulf Fleet → Multi-rig sensor analogy")
 
+    # MWD Simulator Controls
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
     pulse_width = st.slider("Pulse Width (s)", 0.05, 0.5, 0.10, 0.05)
@@ -74,7 +81,9 @@ with st.sidebar:
 if not selected_buoys:
     selected_buoys = ["42001"]
 
-# === NOAA DATA FETCH (10–20 MIN CACHE) ===
+# ========================================
+# NOAA DATA FETCH (10–20 MIN CACHE)
+# ========================================
 @st.cache_data(ttl=600)
 def fetch_spectral(station_id):
     url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.spec"
@@ -120,16 +129,21 @@ def fetch_realtime(station_id):
     except:
         return {k: np.nan for k in ["WVHT", "DPD", "WSPD", "WD", "PRES", "ATMP", "WTMP", "MWD"]}
 
-# === LAYOUT: 3 COLUMNS ===
+# ========================================
+# LAYOUT: 3 COLUMNS
+# ========================================
 col_left, col_center, col_right = st.columns([1.8, 2.5, 1.2])
 
-# === LEFT: NOAA BUOY DATA (STABLE, NO FLICKER) ===
+# ========================================
+# LEFT: NOAA BUOY DATA (STABLE)
+# ========================================
 with col_left:
     st.subheader("NOAA Buoy Data — Live Environmental Conditions")
     primary = selected_buoys[0]
     rt = fetch_realtime(primary)
     b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
+    # Format NOAA values
     wave_height = f"{rt['WVHT']:.1f} ft" if not pd.isna(rt['WVHT']) else "—"
     dom_period = f"{rt['DPD']:.1f} s" if not pd.isna(rt['DPD']) else "—"
     wind_speed = f"{rt['WSPD']:.1f} kt" if not pd.isna(rt['WSPD']) else "—"
@@ -139,13 +153,16 @@ with col_left:
     sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['WTMP']) else "—"
     air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(rt['ATMP']) else "—"
 
+    # Simulated extras
     current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
     humidity = f"{np.random.randint(60, 95)}%"
     visibility = f"{np.random.uniform(5, 15):.1f} mi"
 
+    # Nearest rig
     nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
     dist = haversine(b_lat, b_lon, nearest_rig["lat"], nearest_rig["lon"])
 
+    # 3-column metrics
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Wave Height", wave_height)
@@ -163,6 +180,7 @@ with col_left:
         st.metric("Visibility", visibility)
         st.metric("Nearest Rig", f"{nearest_rig['name']} ({dist:.0f} mi)")
 
+    # Drilling window
     try:
         wh = float(wave_height.split()[0]) if wave_height != "—" else 99
         ws = float(wind_speed.split()[0]) if wind_speed != "—" else 99
@@ -175,22 +193,28 @@ with col_left:
     except:
         st.info("**DRILLING WINDOW: PENDING**")
 
-# === CENTER: RESISTIVITY + 6-PACK + WAVE ENERGY + DISTANCE + LARGE MAP ===
+# ========================================
+# CENTER: SIMULATED PINGS + ANALYSIS + MAP
+# ========================================
 with col_center:
-    st.subheader("Resistivity Pulse + Wave Energy + Map")
+    st.subheader("Simulated Active Sonar Ping (MWD Pulse)")
 
-    # 1. ORIGINAL SINE DECAY PULSE
+    # 1. MWD PULSE (SINE DECAY) — CORRECTED TITLE
     t = np.linspace(0, 2, 200)
     ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
     ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
-    fig2 = go.Figure()
-    fig2.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
-                              mode='lines', name='Resistivity Pulse', line=dict(color='cyan')))
-    fig2.update_layout(title="Like Sending a Resistivity Tool Pulse Downhole", height=300, template="plotly_dark")
-    st.plotly_chart(fig2, use_container_width=True)
+    fig_mwd = go.Figure()
+    fig_mwd.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
+                                 mode='lines', name='MWD Pulse', line=dict(color='cyan')))
+    fig_mwd.update_layout(
+        title="MWD Pulse Downhole (Analog to Resistivity)",
+        height=300,
+        template="plotly_dark"
+    )
+    st.plotly_chart(fig_mwd, use_container_width=True)
 
-    # 2. 6-PACK PULSE
-    st.markdown("**Resistivity Tool Pulse (6-Pack)**")
+    # 2. 6-PACK MWD PULSE
+    st.markdown("**MWD 6-Pack Telemetry**")
     t_res = np.linspace(0, 3, 300)
     ping6 = np.zeros_like(t_res)
     for i in range(6):
@@ -205,7 +229,7 @@ with col_center:
     fig6.update_layout(height=300, template="plotly_dark")
     st.plotly_chart(fig6, use_container_width=True)
 
-    # 3. WAVE ENERGY vs RIG PROXIMITY (LARGE)
+    # 3. WAVE ENERGY vs RIG PROXIMITY
     spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
     combined_df = pd.concat(spectral_dfs) if spectral_dfs else pd.DataFrame()
     impact_rows = []
@@ -221,7 +245,7 @@ with col_center:
         fig_wave.update_layout(height=400)
         st.plotly_chart(fig_wave, use_container_width=True)
 
-    # 4. DISTANCE TABLE (LARGE)
+    # 4. BUOY-TO-RIG DISTANCE TABLE
     st.subheader("Buoy-to-Rig Distances")
     dist_rows = []
     for bid in selected_buoys:
@@ -233,6 +257,7 @@ with col_center:
     st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True, height=400)
 
     # 5. LARGE MAP — ALWAYS ON
+    st.subheader("Gulf of Mexico — Rigs & Buoys")
     m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
     for rig in real_rigs:
         folium.CircleMarker([rig["lat"], rig["lon"]], radius=12, popup=rig["name"], color="orange", fill=True).add_to(m)
@@ -241,14 +266,15 @@ with col_center:
         folium.CircleMarker([lat, lon], radius=10, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
     st_folium(m, width=1000, height=500, key="map")
 
-# === RIGHT: MWD PULSE SIMULATOR (FIXED) ===
+# ========================================
+# RIGHT: MWD PULSE SIMULATOR (FIXED)
+# ========================================
 with col_right:
-    st.subheader("MWD Mud Pulse Telemetry")
+    st.subheader("MWD Mud Pulse Telemetry Simulator")
 
     if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
         bit_pattern = "1010"
 
-    # Generate packet with correct pulse_width and noise
     t = np.linspace(0, 4, 400)
     signal = np.zeros_like(t)
     for pos in [0.0, 0.5]:
@@ -260,7 +286,7 @@ with col_right:
         signal[mask] = 0.8 if bit == '1' else -0.8
     signal += np.random.normal(0, noise_level, len(t))
 
-    # STATIC PULSE
+    # Static pulse
     st.markdown("**Static MWD Packet**")
     static_df = pd.DataFrame({"Time (s)": t[t <= 2], "Amplitude": signal[t <= 2]})
     fig_static = go.Figure()
@@ -271,7 +297,7 @@ with col_right:
     fig_static.update_layout(height=180, template="plotly_dark", showlegend=False, xaxis_range=[0, 2])
     st.plotly_chart(fig_static, use_container_width=True)
 
-    # ANIMATED PULSE (NO RERUN, NO FLICKER)
+    # Animated pulse
     st.markdown("**Live Telemetry Stream**")
     if 'running' not in st.session_state:
         st.session_state.running = False
@@ -286,7 +312,6 @@ with col_right:
     anim_placeholder = st.empty()
 
     if st.session_state.running:
-        # Use frame to shift signal
         shift = (st.session_state.frame % 80) * (4 / 80)
         t_shifted = (t - shift) % 4
         visible = (t_shifted >= 0) & (t_shifted <= 2)
@@ -302,7 +327,9 @@ with col_right:
     else:
         st.info("Press 'Start' to begin stream")
 
-# === CTA ===
+# ========================================
+# FOOTER / CTA
+# ========================================
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**  
 **Now I'll do it for your rig at 55,000 ft.**  
