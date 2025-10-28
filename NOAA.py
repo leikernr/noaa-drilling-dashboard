@@ -68,8 +68,8 @@ with st.sidebar:
 
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
-    pulse_width = st.slider("Pulse Width (s)", 0.15, 0.35, 0.20, 0.05)  # Fixed width
-    pulse_speed = st.slider("Pulse Speed (s/bit)", 0.3, 1.0, 0.6, 0.1)     # Time between pulses
+    pulse_width = st.slider("Pulse Width (s)", 0.15, 0.35, 0.20, 0.05)
+    pulse_speed = st.slider("Pulse Speed (s/bit)", 0.3, 1.0, 0.6, 0.1)
 
     if st.button("Refresh All"):
         st.cache_data.clear()
@@ -132,7 +132,7 @@ def fetch_realtime(station_id):
 col_left, col_center = st.columns([1.8, 2.5])
 
 # ========================================
-# LEFT: NOAA BUOY DATA (REAL + FALLBACK)
+# LEFT: NOAA BUOY DATA
 # ========================================
 with col_left:
     st.subheader("NOAA Buoy Data — Live Environmental Conditions")
@@ -174,7 +174,7 @@ with col_left:
         st.metric("Nearest Rig", f"{nearest_rig['name']} ({dist:.0f} mi)")
 
 # ========================================
-# CENTER: SIMULATED PINGS + REAL MWD 6-PACK + MAP
+# CENTER: SIMULATED PINGS + REAL MWD 6-PACK (1 WINDOW)
 # ========================================
 with col_center:
     st.subheader("Simulated Active Sonar Ping (MWD Pulse)")
@@ -193,22 +193,21 @@ with col_center:
     )
     st.plotly_chart(fig_mwd, use_container_width=True)
 
-    # 2. REALISTIC MWD 6-PACK TELEMETRY
+    # 2. REAL MWD 6-PACK TELEMETRY — SINGLE WINDOW
     st.markdown("**MWD 6-Pack Telemetry**")
 
     # Validate bit pattern
     if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
         bit_pattern = "1010"
 
-    # Pulse timing
+    # Timing
     clear_width = pulse_width * 1.5
     bit_spacing = pulse_speed
-    total_time = 2 * clear_width + 0.5 + 4 * bit_spacing + pulse_width
-    t_full = np.linspace(0, total_time, int(total_time * 100))
-
+    packet_duration = 2 * clear_width + 0.5 + 4 * bit_spacing + pulse_width
+    t_full = np.linspace(0, packet_duration, int(packet_duration * 100))
     signal = np.zeros_like(t_full)
 
-    # Helper: trapezoidal pulse
+    # Trapezoidal pulse helper
     def add_pulse(t, center, width, height):
         rise = width * 0.2
         flat = width * 0.6
@@ -230,43 +229,56 @@ with col_center:
         height = 0.8 if bit == '1' else -0.8
         add_pulse(t_full, center, pulse_width, height)
 
-    # Add realistic noise
     signal += np.random.normal(0, 0.08, len(t_full))
 
-    # Static view
-    static_df = pd.DataFrame({"Time (s)": t_full, "Amplitude": signal})
-    fig_static = go.Figure()
-    fig_static.add_trace(go.Scatter(x=static_df["Time (s)"], y=static_df["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
-    fig_static.add_hline(y=0, line_dash="dot", line_color="gray")
-    fig_static.update_layout(height=220, template="plotly_dark", showlegend=False, xaxis_range=[0, total_time])
-    st.plotly_chart(fig_static, use_container_width=True)
-
-    # Animated view
+    # Session state for animation
     if 'running' not in st.session_state:
         st.session_state.running = False
-    if 'frame' not in st.session_state:
-        st.session_state.frame = 0
+    if 'offset' not in st.session_state:
+        st.session_state.offset = 0
 
-    if st.button("Start" if not st.session_state.running else "Stop"):
+    # Start/Stop button
+    if st.button("Start Live Telemetry" if not st.session_state.running else "Stop Live Telemetry"):
         st.session_state.running = not st.session_state.running
         if not st.session_state.running:
-            st.session_state.frame = 0
+            st.session_state.offset = 0
 
-    anim_placeholder = st.empty()
+    # Single plot placeholder
+    plot_placeholder = st.empty()
 
     if st.session_state.running:
-        shift = (st.session_state.frame % int(total_time * 20)) * (total_time / (total_time * 20))
-        t_shifted = (t_full - shift) % total_time
-        visible = (t_shifted >= 0) & (t_shifted <= total_time)
-        df_plot = pd.DataFrame({"Time (s)": t_shifted[visible], "Amplitude": signal[visible]})
+        # Update offset
+        st.session_state.offset = (st.session_state.offset + 0.02) % packet_duration
+        t_shifted = (t_full - st.session_state.offset + packet_duration) % packet_duration
+        df_plot = pd.DataFrame({"Time (s)": t_shifted, "Amplitude": signal})
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
         fig.add_hline(y=0, line_dash="dot", line_color="gray")
-        fig.update_layout(height=220, template="plotly_dark", showlegend=False, xaxis_range=[0, total_time])
-        anim_placeholder.plotly_chart(fig, use_container_width=True)
-        st.session_state.frame += 1
+        fig.update_layout(
+            height=300,
+            template="plotly_dark",
+            showlegend=False,
+            xaxis_range=[0, packet_duration],
+            xaxis_title="Time (s)",
+            yaxis_title="Pressure (psi)"
+        )
+        plot_placeholder.plotly_chart(fig, use_container_width=True)
+        st.rerun()
     else:
-        st.info("Press 'Start' to begin 6-Pack telemetry")
+        # Static full packet
+        df_static = pd.DataFrame({"Time (s)": t_full, "Amplitude": signal})
+        fig_static = go.Figure()
+        fig_static.add_trace(go.Scatter(x=df_static["Time (s)"], y=df_static["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
+        fig_static.add_hline(y=0, line_dash="dot", line_color="gray")
+        fig_static.update_layout(
+            height=300,
+            template="plotly_dark",
+            showlegend=False,
+            xaxis_range=[0, packet_duration],
+            xaxis_title="Time (s)",
+            yaxis_title="Pressure (psi)"
+        )
+        plot_placeholder.plotly_chart(fig_static, use_container_width=True)
 
     # 3. WAVE ENERGY vs RIG PROXIMITY
     spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
@@ -295,7 +307,7 @@ with col_center:
     dist_df = pd.DataFrame(dist_rows)
     st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True, height=400)
 
-    # 5. LARGE MAP — ALWAYS ON
+    # 5. LARGE MAP
     st.subheader("Gulf of Mexico — Rigs & Buoys")
     m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
     for rig in real_rigs:
