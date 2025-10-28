@@ -9,11 +9,12 @@ from zoneinfo import ZoneInfo
 import folium
 from streamlit_folium import st_folium
 from math import radians, sin, cos, sqrt, atan2
+import time
 
 # === PAGE CONFIG ===
 st.set_page_config(page_title="Gulf Rig Ops", layout="wide")
 
-# === TITLE ===
+# === TITLE & HEADER ===
 st.title("Submarine Sonar to Subsea Sensors — Gulf of Mexico")
 st.markdown("""
 **Real-Time Rig Operations Dashboard**  
@@ -176,11 +177,11 @@ with col_left:
     except:
         st.info("**DRILLING WINDOW: DATA PENDING**")
 
-# === CENTER: MAP (ALWAYS ON) + WAVE ENERGY + RESISTIVITY PULSE ===
+# === CENTER: MAP (ALWAYS ON) + WAVE ENERGY + RESISTIVITY PULSE (6-PACK) ===
 with col_center:
     st.subheader("Map + Wave Energy + Resistivity Pulse")
 
-    # Map
+    # Map (always visible)
     m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
     folium.CircleMarker(
         location=[b_lat, b_lon],
@@ -323,4 +324,3 @@ st.success("""
 **Now I'll do it for your rig.**  
 [LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking MRE Consulting role
 """)
-
