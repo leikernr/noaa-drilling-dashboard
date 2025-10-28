@@ -35,6 +35,42 @@ buoy_info = {
     "42047": ("42047 - Keathley Canyon (NW)", 27.900, -88.022)
 }
 
+# BOEM RIG DETAILS (EXACT FORMAT)
+boem_rig_details = {
+    "Olympus TLP": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 807, Gulf of Mexico",
+        "coords": "27.22°N, 90.00°W (water depth ~3,000 ft)",
+        "status": "Active (production since 2014)",
+        "capacity": "~100,000 boepd (oil/gas)"
+    },
+    "Mars TLP": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 807, Gulf of Mexico",
+        "coords": "27.18°N, 89.25°W (water depth ~3,700 ft)",
+        "status": "Active (production since 1996)",
+        "capacity": "~100,000 boepd"
+    },
+    "Ursa": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 809, Gulf of Mexico",
+        "coords": "27.33°N, 89.21°W (water depth ~3,950 ft)",
+        "status": "Active (production since 1999)",
+        "capacity": "~150,000 boepd"
+    },
+    "Appomattox": {
+        "type": "Semi-Submersible",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 392, Gulf of Mexico",
+        "coords": "27.00°N, 88.34°W (water depth ~7,400 ft)",
+        "status": "Active (production since 2019)",
+        "capacity": "~175,000 boepd"
+    }
+}
+
 # Haversine distance (miles)
 def haversine(lat1, lon1, lat2, lon2):
     R = 3958.8
@@ -72,6 +108,7 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
+# ENSURE selected_buoys is never empty
 if not selected_buoys:
     selected_buoys = ["42001"]
 
@@ -142,7 +179,13 @@ def fetch_spectral(station_id):
 # 1. NOAA BUOY DATA — 100% STABLE
 # ========================================
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
-primary = selected_buoys[0]
+
+# Safe primary selection
+if not selected_buoys or selected_buoys[0] not in buoy_info:
+    primary = list(buoy_info.keys())[0]
+else:
+    primary = selected_buoys[0]
+
 rt = fetch_realtime(primary)
 b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
@@ -275,35 +318,47 @@ if not impact_df.empty:
     st.plotly_chart(fig_wave, use_container_width=True)
 
 # ========================================
-# 5. GULF OF MEXICO — RIGS & BUOYS (LIVE NOAA POPUP DATA)
+# 5. GULF OF MEXICO — RIGS & BUOYS (BOEM POPUPS + NOAA DATA)
 # ========================================
 st.markdown("## Gulf of Mexico — Rigs & Buoys")
 
-# Pre-fetch ALL buoy data once (cached)
-buoy_data = {}
-for bid in selected_buoys:
-    buoy_data[bid] = fetch_realtime(bid)
+# Pre-fetch buoy data
+buoy_data = {bid: fetch_realtime(bid) for bid in selected_buoys}
 
 m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
 
-# Rigs
+# RIGS WITH BOEM DETAILS (EXACT FORMAT)
 for rig in real_rigs:
+    name = rig["name"]
+    details = boem_rig_details.get(name, {})
+    popup_html = f"""
+    <div style="font-family: monospace; min-width: 240px;">
+        <b>Quick BOEM Details for {name}</b><br>
+        <hr style="margin:4px 0;">
+        * Platform Type: {details.get('type', 'N/A')}<br>
+        * Operator: {details.get('operator', 'N/A')}<br>
+        * Location: {details.get('location', 'N/A')}<br>
+        * Coordinates: {details.get('coords', 'N/A')}<br>
+        * Status: {details.get('status', 'N/A')}<br>
+        * Capacity: {details.get('capacity', 'N/A')}
+    </div>
+    """
     folium.CircleMarker(
-        [rig["lat"], rig["lon"]], 
-        radius=12, 
-        popup=folium.Popup(f"<b>{rig['name']}</b>", max_width=200),
-        color="orange", 
+        [rig["lat"], rig["lon"]],
+        radius=14,
+        popup=folium.Popup(popup_html, max_width=400),
+        color="orange",
         fill=True,
-        fillOpacity=0.9
+        fillOpacity=0.9,
+        weight=2
     ).add_to(m)
 
-# Buoys with LIVE NOAA data in popup
+# BUOYS WITH LIVE NOAA DATA
 for bid in selected_buoys:
     lat, lon = buoy_info[bid][1], buoy_info[bid][2]
     rt = buoy_data[bid]
     is_active = (bid == primary)
 
-    # Format live data
     popup_html = f"""
     <div style="font-family: monospace; min-width: 180px;">
         <b>{bid}</b> — <i>{buoy_info[bid][0]}</i><br>
@@ -318,35 +373,13 @@ for bid in selected_buoys:
         popup_html += '<br><span style="color:lime; font-weight:bold;">ACTIVE DATA SOURCE</span>'
     popup_html += "</div>"
 
-    # Active buoy: lime, larger, pulsing ring
     if is_active:
-        folium.CircleMarker(
-            [lat, lon],
-            radius=18,
-            popup=folium.Popup(popup_html, max_width=300),
-            color="lime",
-            fill=True,
-            fillOpacity=0.9,
-            weight=3
-        ).add_to(m)
-        folium.Circle(
-            [lat, lon],
-            radius=35000,  # ~21 mi
-            color="lime",
-            weight=2,
-            fill=False,
-            dashArray='10,10',
-            opacity=0.7
-        ).add_to(m)
+        folium.CircleMarker([lat, lon], radius=18, popup=folium.Popup(popup_html, max_width=300),
+                            color="lime", fill=True, fillOpacity=0.9, weight=3).add_to(m)
+        folium.Circle([lat, lon], radius=35000, color="lime", weight=2, fill=False, dashArray='10,10', opacity=0.7).add_to(m)
     else:
-        folium.CircleMarker(
-            [lat, lon],
-            radius=11,
-            popup=folium.Popup(popup_html, max_width=300),
-            color="cyan",
-            fill=True,
-            fillOpacity=0.8
-        ).add_to(m)
+        folium.CircleMarker([lat, lon], radius=11, popup=folium.Popup(popup_html, max_width=300),
+                            color="cyan", fill=True, fillOpacity=0.8).add_to(m)
 
 st_folium(m, width=1000, height=500, key="map")
 
