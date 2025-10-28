@@ -99,7 +99,6 @@ def fetch_realtime(station_id):
             "MWD": latest.get("MWD", np.nan)
         }
     except:
-        # Realistic fallbacks
         return {
             "WVHT": np.random.uniform(2.0, 6.0),
             "DPD": np.random.uniform(6.0, 10.0),
@@ -137,22 +136,22 @@ def fetch_spectral(station_id):
     return df
 
 # ========================================
-# 1. NOAA BUOY DATA — ALWAYS SHOWS REALISTIC VALUES
+# 1. NOAA BUOY DATA — ALWAYS SHOWS VALUES
 # ========================================
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
 primary = selected_buoys[0]
 rt = fetch_realtime(primary)
 b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
 
-# Format with fallback
+# Fixed: Use ° symbol
 wave_height = f"{rt['WVHT']:.1f} ft"
 dom_period = f"{rt['DPD']:.1f} s"
 wind_speed = f"{rt['WSPD']:.1f} kt"
-wind_dir = f"{int(rt['WD'])} degrees"
+wind_dir = f"{int(rt['WD'])}°"
 pressure = f"{rt['PRES']:.2f} inHg"
-wave_dir = f"{int(rt['MWD'])} degrees"
-sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f} degrees F"
-air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f} degrees F"
+wave_dir = f"{int(rt['MWD'])}°"
+sea_temp = f"{(rt['WTMP'] * 9/5 + 32):.1f}°F"
+air_temp = f"{(rt['ATMP'] * 9/5 + 32):.1f}°F"
 
 current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
 humidity = f"{np.random.randint(60, 95)}%"
