@@ -44,13 +44,15 @@ def haversine(lat1, lon1, lat2, lon2):
 # === SIDEBAR ===
 with st.sidebar:
     st.header("Controls")
+
+    # FIXED: format_func now safely maps ID → Name
     buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
         options=list(buoy_options.values()),
         default=["42001"],
         max_selections=6,
-        format_func=lambda x: buoy_options[x]
+        format_func=lambda x: [k for k, v in buoy_options.items() if v == x][0]
     )
 
     st.header("Why This Matters")
