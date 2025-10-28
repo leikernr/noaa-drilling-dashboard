@@ -45,7 +45,6 @@ def haversine(lat1, lon1, lat2, lon2):
 with st.sidebar:
     st.header("Controls")
 
-    # FIXED: format_func now safely maps ID → Name
     buoy_options = {info[0]: bid for bid, info in buoy_info.items()}
     selected_buoys = st.multiselect(
         "Choose buoys (6 closest)",
@@ -75,8 +74,8 @@ with st.sidebar:
 if not selected_buoys:
     selected_buoys = ["42001"]
 
-# === NOAA DATA FETCH ===
-@st.cache_data(ttl=300)
+# === NOAA DATA FETCH (10–20 MIN CACHE) ===
+@st.cache_data(ttl=600)
 def fetch_spectral(station_id):
     url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.spec"
     try:
@@ -101,7 +100,7 @@ def fetch_spectral(station_id):
     df["Station"] = station_id
     return df
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def fetch_realtime(station_id):
     url = f"https://www.ndbc.noaa.gov/data/realtime2/{station_id}.txt"
     try:
@@ -122,11 +121,11 @@ def fetch_realtime(station_id):
         return {k: np.nan for k in ["WVHT", "DPD", "WSPD", "WD", "PRES", "ATMP", "WTMP", "MWD"]}
 
 # === LAYOUT: 3 COLUMNS ===
-col_left, col_center, col_right = st.columns([1.8, 2, 1.2])
+col_left, col_center, col_right = st.columns([1.8, 2.5, 1.2])
 
-# === LEFT: RIG OPS PANEL (REAL NOAA DATA PER BUOY) ===
+# === LEFT: NOAA BUOY DATA (STABLE, NO FLICKER) ===
 with col_left:
-    st.subheader("Rig Ops — Live Environmental Conditions")
+    st.subheader("NOAA Buoy Data — Live Environmental Conditions")
     primary = selected_buoys[0]
     rt = fetch_realtime(primary)
     b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
@@ -176,7 +175,7 @@ with col_left:
     except:
         st.info("**DRILLING WINDOW: PENDING**")
 
-# === CENTER: RESISTIVITY (SINE) + 6-PACK + WAVE ENERGY + DISTANCE + MAP ===
+# === CENTER: RESISTIVITY + 6-PACK + WAVE ENERGY + DISTANCE + LARGE MAP ===
 with col_center:
     st.subheader("Resistivity Pulse + Wave Energy + Map")
 
@@ -206,7 +205,7 @@ with col_center:
     fig6.update_layout(height=300, template="plotly_dark")
     st.plotly_chart(fig6, use_container_width=True)
 
-    # 3. WAVE ENERGY vs RIG PROXIMITY
+    # 3. WAVE ENERGY vs RIG PROXIMITY (LARGE)
     spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
     combined_df = pd.concat(spectral_dfs) if spectral_dfs else pd.DataFrame()
     impact_rows = []
@@ -219,10 +218,10 @@ with col_center:
     if not impact_df.empty:
         fig_wave = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy", hover_data=["Buoy"],
                               title="Wave Energy vs Rig Proximity", template="plotly_dark")
-        fig_wave.update_layout(height=300)
+        fig_wave.update_layout(height=400)
         st.plotly_chart(fig_wave, use_container_width=True)
 
-    # 4. DISTANCE TABLE
+    # 4. DISTANCE TABLE (LARGE)
     st.subheader("Buoy-to-Rig Distances")
     dist_rows = []
     for bid in selected_buoys:
@@ -231,24 +230,25 @@ with col_center:
             d = haversine(b_lat, b_lon, rig["lat"], rig["lon"])
             dist_rows.append({"Buoy": bid, "Rig": rig["name"], "Distance (mi)": round(d, 1)})
     dist_df = pd.DataFrame(dist_rows)
-    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True)
+    st.dataframe(dist_df.style.highlight_min(axis=0, subset=["Distance (mi)"]), use_container_width=True, height=400)
 
-    # 5. MAP — ALWAYS ON
+    # 5. LARGE MAP — ALWAYS ON
     m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
     for rig in real_rigs:
-        folium.CircleMarker([rig["lat"], rig["lon"]], radius=10, popup=rig["name"], color="orange", fill=True).add_to(m)
+        folium.CircleMarker([rig["lat"], rig["lon"]], radius=12, popup=rig["name"], color="orange", fill=True).add_to(m)
     for bid in selected_buoys:
         lat, lon = buoy_info[bid][1], buoy_info[bid][2]
-        folium.CircleMarker([lat, lon], radius=8, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
-    st_folium(m, width=700, height=350, key="map")
+        folium.CircleMarker([lat, lon], radius=10, popup=f"Buoy {bid}", color="cyan", fill=True).add_to(m)
+    st_folium(m, width=1000, height=500, key="map")
 
-# === RIGHT: MWD — SINGLE SECTION ===
+# === RIGHT: MWD PULSE SIMULATOR (FIXED) ===
 with col_right:
     st.subheader("MWD Mud Pulse Telemetry")
 
     if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
         bit_pattern = "1010"
 
+    # Generate packet with correct pulse_width and noise
     t = np.linspace(0, 4, 400)
     signal = np.zeros_like(t)
     for pos in [0.0, 0.5]:
@@ -271,7 +271,7 @@ with col_right:
     fig_static.update_layout(height=180, template="plotly_dark", showlegend=False, xaxis_range=[0, 2])
     st.plotly_chart(fig_static, use_container_width=True)
 
-    # ANIMATED PULSE
+    # ANIMATED PULSE (NO RERUN, NO FLICKER)
     st.markdown("**Live Telemetry Stream**")
     if 'running' not in st.session_state:
         st.session_state.running = False
@@ -286,6 +286,7 @@ with col_right:
     anim_placeholder = st.empty()
 
     if st.session_state.running:
+        # Use frame to shift signal
         shift = (st.session_state.frame % 80) * (4 / 80)
         t_shifted = (t - shift) % 4
         visible = (t_shifted >= 0) & (t_shifted <= 2)
@@ -298,7 +299,6 @@ with col_right:
         fig.update_layout(height=180, template="plotly_dark", showlegend=False, xaxis_range=[0, 2])
         anim_placeholder.plotly_chart(fig, use_container_width=True)
         st.session_state.frame += 1
-        st.rerun()
     else:
         st.info("Press 'Start' to begin stream")
 
