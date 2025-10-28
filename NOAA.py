@@ -20,10 +20,9 @@ st.markdown("""
 Built by U.S. Navy STS2 | 14 years oilfield telemetry
 """)
 
-# === SIDEBAR: 6 CLOSEST BUOYS ===
+# === SIDEBAR: 6 BUOYS + WHY THIS MATTERS ===
 with st.sidebar:
     st.header("Select Buoy (6 Closest to Rigs)")
-    # 6 buoys closest to real rigs
     buoy_options = {
         "42001 - Near Neptune TLP": "42001",
         "42002 - Central Gulf": "42002",
@@ -32,12 +31,21 @@ with st.sidebar:
         "42012 - Central Gulf": "42012",
         "42035 - West Florida Shelf": "42035"
     }
-    selected_buoy = st.selectbox(
+    selected_name = st.selectbox(
         "Choose buoy",
         options=list(buoy_options.keys()),
         index=0
     )
-    buoy_id = buoy_options[selected_buoy]
+    buoy_id = buoy_options[selected_name]
+
+    # === WHY THIS MATTERS (RESTORED) ===
+    st.header("Why This Matters")
+    st.write("""
+    - **Submarine Sonar** = Real-time signal processing  
+    - **MWD Drilling** = Same math: gamma, resistivity, torque  
+    - **Energy Tech** = Multi-source fusion for ops  
+    """)
+    st.info("NOAA 420xx → Gulf Fleet → Multi-rig sensor analogy")
 
     st.header("MWD Pulse Simulator")
     bit_pattern = st.text_input("Binary Data (4 bits)", value="1010", max_chars=4)
@@ -47,6 +55,23 @@ with st.sidebar:
     if st.button("Refresh Data"):
         st.cache_data.clear()
         st.success("Data refreshed!")
+
+# === COORDINATES & RIGS ===
+buoy_coords = {
+    "42001": [25.933, -86.733],
+    "42002": [26.055, -90.333],
+    "42039": [28.790, -86.007],
+    "42040": [29.212, -88.208],
+    "42012": [30.059, -87.548],
+    "42035": [29.232, -84.650]
+}
+
+real_rigs = [
+    {"name": "Neptune TLP", "lat": 27.37, "lon": -89.92},
+    {"name": "Thunder Hawk SPAR", "lat": 28.18, "lon": -88.67},
+    {"name": "King's Quay FPS", "lat": 27.75, "lon": -89.25},
+    {"name": "Sailfin FPSO", "lat": 27.80, "lon": -90.20}
+]
 
 # === DATA INGEST ===
 @st.cache_data(ttl=600)
@@ -104,8 +129,7 @@ col_left, col_center, col_right = st.columns([1.8, 2, 1.2])
 # === LEFT: RIG OPS PANEL (REAL NOAA DATA) ===
 with col_left:
     st.subheader("Rig Ops — Live Conditions")
-    
-    # Real NOAA values
+
     wave_height = f"{env_data['WVHT']:.1f} ft" if not pd.isna(env_data['WVHT']) else "—"
     dom_period = f"{env_data['DPD']:.1f} s" if not pd.isna(env_data['DPD']) else "—"
     wind_speed = f"{env_data['WSPD']:.1f} kt" if not pd.isna(env_data['WSPD']) else "—"
@@ -115,28 +139,15 @@ with col_left:
     water_temp = f"{(env_data['WTMP'] * 9/5 + 32):.1f}°F" if not pd.isna(env_data['WTMP']) else "—"
     air_temp = f"{(env_data['ATMP'] * 9/5 + 32):.1f}°F" if not pd.isna(env_data['ATMP']) else "—"
 
-    # Simulated
     current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
     current_dir = f"{np.random.randint(0, 360)}°"
     humidity = f"{np.random.randint(60, 95)}%"
     visibility = f"{np.random.uniform(5, 15):.1f} mi"
 
-    # Nearest rig
-    buoy_coords = {
-        "42001": [25.933, -86.733], "42002": [27.933, -88.233], "42039": [28.18, -88.67],
-        "42040": [29.21, -87.55], "42012": [30.05, -87.55], "42035": [29.23, -84.65]
-    }
-    real_rigs = [
-        {"name": "Neptune TLP", "lat": 27.37, "lon": -89.92},
-        {"name": "Thunder Hawk SPAR", "lat": 28.18, "lon": -88.67},
-        {"name": "King's Quay FPS", "lat": 27.75, "lon": -89.25},
-        {"name": "Sailfin FPSO", "lat": 27.80, "lon": -90.20}
-    ]
     b_lat, b_lon = buoy_coords[buoy_id]
     nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
     dist = haversine(b_lat, b_lon, nearest_rig["lat"], nearest_rig["lon"])
 
-    # Metrics
     st.metric("Wave Height", wave_height, help="Rig motion, BHA run")
     st.metric("Dom. Period", dom_period, help="Wave type")
     st.metric("Wind Speed", wind_speed, help="DP, crane")
@@ -150,7 +161,6 @@ with col_left:
     st.metric("Visibility", visibility, help="Helicopter ops")
     st.metric("Nearest Rig", nearest_rig["name"], f"{dist:.0f} mi")
 
-    # Drilling Window
     try:
         wh = float(wave_height.split()[0]) if wave_height != "—" else 99
         ws = float(wind_speed.split()[0]) if wind_speed != "—" else 99
@@ -165,12 +175,10 @@ with col_left:
 
 # === CENTER: MAP (ALWAYS ON) + WAVE ENERGY ===
 with col_center:
-    st.subheader("Map + Wave Energy vs Rig Proximity")
+    st.subheader("Map + Wave Energy Impact")
 
-    # Map (always visible)
-    m = folium.Map(location=[27.0, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
+    m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
     
-    # Buoy
     folium.CircleMarker(
         location=[b_lat, b_lon],
         radius=12,
@@ -179,7 +187,6 @@ with col_center:
         fill=True
     ).add_to(m)
 
-    # Rigs
     for rig in real_rigs:
         folium.CircleMarker(
             location=[rig["lat"], rig["lon"]],
@@ -191,7 +198,6 @@ with col_center:
 
     st_folium(m, width=700, height=350, key="map")
 
-    # Wave Energy vs Rig Proximity
     avg_energy = spec_df["Spectral Energy (m²/Hz)"].mean()
     impact_data = [{
         "Buoy": buoy_id,
@@ -200,7 +206,7 @@ with col_center:
     }]
     impact_df = pd.DataFrame(impact_data)
     fig = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Wave Energy (m²/Hz)",
-                     hover_data=["Buoy"], title="Wave Energy Impact",
+                     hover_data=["Buoy"], title="Wave Energy vs Rig Proximity",
                      template="plotly_dark")
     fig.update_layout(height=300)
     st.plotly_chart(fig, use_container_width=True)
@@ -212,7 +218,6 @@ with col_right:
     if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
         bit_pattern = "1010"
 
-    # Static pulse
     t = np.linspace(0, 4, 400)
     signal = np.zeros_like(t)
     for pos in [0.0, 0.5]:
@@ -235,7 +240,6 @@ with col_right:
                              xaxis_range=[0, 2], margin=dict(l=0, r=0, t=0, b=0))
     st.plotly_chart(fig_static, use_container_width=True)
 
-    # Animated
     if 'running' not in st.session_state:
         st.session_state.running = True
     if st.button("Stop" if st.session_state.running else "Start", key="mwd_btn"):
