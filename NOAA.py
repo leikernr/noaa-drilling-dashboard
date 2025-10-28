@@ -35,6 +35,42 @@ buoy_info = {
     "42047": ("42047 - Keathley Canyon (NW)", 27.900, -88.022)
 }
 
+# BOEM RIG DETAILS (EXACT FORMAT)
+boem_rig_details = {
+    "Olympus TLP": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 807, Gulf of Mexico",
+        "coords": "27.22°N, 90.00°W (water depth ~3,000 ft)",
+        "status": "Active (production since 2014)",
+        "capacity": "~100,000 boepd (oil/gas)"
+    },
+    "Mars TLP": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 807, Gulf of Mexico",
+        "coords": "27.18°N, 89.25°W (water depth ~3,700 ft)",
+        "status": "Active (production since 1996)",
+        "capacity": "~100,000 boepd"
+    },
+    "Ursa": {
+        "type": "Tension Leg Platform (TLP)",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 809, Gulf of Mexico",
+        "coords": "27.33°N, 89.21°W (water depth ~3,950 ft)",
+        "status": "Active (production since 1999)",
+        "capacity": "~150,000 boepd"
+    },
+    "Appomattox": {
+        "type": "Semi-Submersible",
+        "operator": "Shell Offshore Inc.",
+        "location": "Mississippi Canyon Block 392, Gulf of Mexico",
+        "coords": "27.00°N, 88.34°W (water depth ~7: 7,400 ft)",
+        "status": "Active (production since 2019)",
+        "capacity": "~175,000 boepd"
+    }
+}
+
 # Haversine distance (miles)
 def haversine(lat1, lon1, lat2, lon2):
     R = 3958.8
@@ -144,217 +180,4 @@ def fetch_spectral(station_id):
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
 primary = selected_buoys[0]
 rt = fetch_realtime(primary)
-b_lat, b_lon = buoy_info[primary][1], buoy_info[primary][2]
-
-wave_height = f"{rt['WVHT']:.1f} ft"
-dom_period = f"{rt['DPD']:.1f} s"
-wind_speed = f"{rt['WSPD']:.1f} kt"
-wind_dir = f"{int(rt['WD'])} degrees"
-pressure = f"{rt['PRES']:.2f} inHg"
-wave_dir = f"{int(rt['MWD'])} degrees"
-sea_temp = f"{rt['WTMP']:.1f} degrees F"
-air_temp = f"{rt['ATMP']:.1f} degrees F"
-current_speed = f"{np.random.uniform(0.5, 2.0):.1f} kt"
-humidity = f"{np.random.randint(60, 95)} percent"
-visibility = f"{np.random.uniform(5, 15):.1f} mi"
-
-nearest_rig = min(real_rigs, key=lambda r: haversine(b_lat, b_lon, r["lat"], r["lon"]))
-dist = haversine(b_lat, b_lon, nearest_rig["lat"], nearest_rig["lon"])
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Wave Height", wave_height)
-    st.metric("Dom. Period", dom_period)
-    st.metric("Wind Speed", wind_speed)
-    st.metric("Wind Dir", wind_dir)
-with col2:
-    st.metric("Barometric Pressure", pressure)
-    st.metric("Wave Dir", wave_dir)
-    st.metric("Sea Temp", sea_temp)
-    st.metric("Current Speed", current_speed)
-with col3:
-    st.metric("Air Temp", air_temp)
-    st.metric("Humidity", humidity)
-    st.metric("Visibility", visibility)
-    st.metric("Nearest Rig", f"{nearest_rig['name']} ({dist:.0f} mi)")
-
-# ========================================
-# 2. SIMULATED ACTIVE SONAR PING (MWD PULSE)
-# ========================================
-st.markdown("## Simulated Active Sonar Ping (MWD Pulse)")
-t = np.linspace(0, 2, 200)
-ping = np.sin(2 * np.pi * 5 * t) * np.exp(-t*3)
-ping_df = pd.DataFrame({"Time (s)": t, "Amplitude": ping})
-fig_mwd = go.Figure()
-fig_mwd.add_trace(go.Scatter(x=ping_df["Time (s)"], y=ping_df["Amplitude"],
-                             mode='lines', name='MWD Pulse', line=dict(color='cyan')))
-fig_mwd.update_layout(title="MWD Pulse Downhole (Analog to Resistivity)", height=300, template="plotly_dark")
-st.plotly_chart(fig_mwd, use_container_width=True)
-
-# ========================================
-# 3. MWD 6-PACK TELEMETRY — SMOOTH, NO RERUN
-# ========================================
-st.markdown("## MWD 6-Pack Telemetry")
-
-if not (len(bit_pattern) == 4 and all(c in '01' for c in bit_pattern)):
-    bit_pattern = "1010"
-
-clear_width = pulse_width * 1.5
-bit_spacing = pulse_speed
-packet_duration = 2 * clear_width + 0.5 + 4 * bit_spacing + pulse_width
-t_full = np.linspace(0, packet_duration, int(packet_duration * 100))
-signal = np.zeros_like(t_full)
-
-def add_pulse(t, center, width, height):
-    rise = width * 0.2
-    flat = width * 0.6
-    fall = width * 0.2
-    mask_rise = (t >= center) & (t < center + rise)
-    mask_flat = (t >= center + rise) & (t < center + rise + flat)
-    mask_fall = (t >= center + rise + flat) & (t < center + width)
-    signal[mask_rise] = height * (t[mask_rise] - center) / rise
-    signal[mask_flat] = height
-    signal[mask_fall] = height * (1 - (t[mask_fall] - (center + rise + flat)) / fall)
-
-add_pulse(t_full, clear_width / 2, clear_width, 1.0)
-add_pulse(t_full, clear_width + 0.5, clear_width, 1.0)
-for i, bit in enumerate(bit_pattern):
-    center = 2 * clear_width + 0.5 + i * bit_spacing + pulse_width / 2
-    height = 0.8 if bit == '1' else -0.8
-    add_pulse(t_full, center, pulse_width, height)
-signal += np.random.normal(0, 0.08, len(t_full))
-
-if 'running' not in st.session_state:
-    st.session_state.running = False
-if 'offset' not in st.session_state:
-    st.session_state.offset = 0
-
-if st.button("Start Live Telemetry" if not st.session_state.running else "Stop Live Telemetry"):
-    st.session_state.running = not st.session_state.running
-    if not st.session_state.running:
-        st.session_state.offset = 0
-
-plot_placeholder = st.empty()
-
-if st.session_state.running:
-    while st.session_state.running:
-        st.session_state.offset = (st.session_state.offset + 0.02) % packet_duration
-        t_shifted = (t_full - st.session_state.offset + packet_duration) % packet_duration
-        df_plot = pd.DataFrame({"Time (s)": t_shifted, "Amplitude": signal})
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df_plot["Time (s)"], y=df_plot["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
-        fig.add_hline(y=0, line_dash="dot", line_color="gray")
-        fig.update_layout(height=300, template="plotly_dark", showlegend=False, xaxis_range=[0, packet_duration])
-        plot_placeholder.plotly_chart(fig, use_container_width=True)
-        time.sleep(0.02)
-else:
-    df_static = pd.DataFrame({"Time (s)": t_full, "Amplitude": signal})
-    fig_static = go.Figure()
-    fig_static.add_trace(go.Scatter(x=df_static["Time (s)"], y=df_static["Amplitude"], mode='lines', line=dict(color='cyan', width=2)))
-    fig_static.add_hline(y=0, line_dash="dot", line_color="gray")
-    fig_static.update_layout(height=300, template="plotly_dark", showlegend=False, xaxis_range=[0, packet_duration])
-    plot_placeholder.plotly_chart(fig_static, use_container_width=True)
-
-# ========================================
-# 4. WAVE ENERGY vs RIG PROXIMITY
-# ========================================
-st.markdown("## Wave Energy vs Rig Proximity")
-spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
-combined_df = pd.concat(spectral_dfs) if spectral_dfs else pd.DataFrame()
-impact_rows = []
-for bid in selected_buoys:
-    energy = combined_df[combined_df["Station"] == bid]["Spectral Energy (m²/Hz)"].mean()
-    b_lat, b_lon = buoy_info[bid][1], buoy_info[bid][2]
-    dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
-    impact_rows.append({"Buoy": bid, "Avg Energy": round(energy, 2) if not pd.isna(energy) else np.nan, "Nearest Rig (mi)": round(dist, 1)})
-impact_df = pd.DataFrame(impact_rows).dropna()
-if not impact_df.empty:
-    fig_wave = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy", hover_data=["Buoy"],
-                          title="Wave Energy vs Rig Proximity", template="plotly_dark")
-    fig_wave.update_layout(height=400)
-    st.plotly_chart(fig_wave, use_container_width=True)
-
-# ========================================
-# 5. GULF OF MEXICO — RIGS & BUOYS (LIVE NOAA POPUP DATA)
-# ========================================
-st.markdown("## Gulf of Mexico — Rigs & Buoys")
-
-# Pre-fetch ALL buoy data once (cached)
-buoy_data = {}
-for bid in selected_buoys:
-    buoy_data[bid] = fetch_realtime(bid)
-
-m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
-
-# Rigs
-for rig in real_rigs:
-    folium.CircleMarker(
-        [rig["lat"], rig["lon"]], 
-        radius=12, 
-        popup=folium.Popup(f"<b>{rig['name']}</b>", max_width=200),
-        color="orange", 
-        fill=True,
-        fillOpacity=0.9
-    ).add_to(m)
-
-# Buoys with LIVE NOAA data in popup
-for bid in selected_buoys:
-    lat, lon = buoy_info[bid][1], buoy_info[bid][2]
-    rt = buoy_data[bid]
-    is_active = (bid == primary)
-
-    # Format live data
-    popup_html = f"""
-    <div style="font-family: monospace; min-width: 180px;">
-        <b>{bid}</b> — <i>{buoy_info[bid][0]}</i><br>
-        <hr style="margin:4px 0;">
-        <b>Wave Ht:</b> {rt['WVHT']:.1f} ft<br>
-        <b>Period:</b> {rt['DPD']:.1f} s<br>
-        <b>Wind:</b> {rt['WSPD']:.1f} kt @ {int(rt['WD'])} degrees<br>
-        <b>Pressure:</b> {rt['PRES']:.2f} inHg<br>
-        <b>Sea Temp:</b> {rt['WTMP']:.1f} degrees F<br>
-    """
-    if is_active:
-        popup_html += '<br><span style="color:lime; font-weight:bold;">ACTIVE DATA SOURCE</span>'
-    popup_html += "</div>"
-
-    # Active buoy: lime, larger, pulsing ring
-    if is_active:
-        folium.CircleMarker(
-            [lat, lon],
-            radius=18,
-            popup=folium.Popup(popup_html, max_width=300),
-            color="lime",
-            fill=True,
-            fillOpacity=0.9,
-            weight=3
-        ).add_to(m)
-        folium.Circle(
-            [lat, lon],
-            radius=35000,  # ~21 mi
-            color="lime",
-            weight=2,
-            fill=False,
-            dashArray='10,10',
-            opacity=0.7
-        ).add_to(m)
-    else:
-        folium.CircleMarker(
-            [lat, lon],
-            radius=11,
-            popup=folium.Popup(popup_html, max_width=300),
-            color="cyan",
-            fill=True,
-            fillOpacity=0.8
-        ).add_to(m)
-
-st_folium(m, width=1000, height=500, key="map")
-
-# ========================================
-# FOOTER / CTA
-# ========================================
-st.success("""
-**This is how I processed sonar at 5,000 ft below sea.**
-**Now I'll do it for your rig at 55,000 ft.**
-[Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
-""")
+b_lat, b_lon = buoy_info
