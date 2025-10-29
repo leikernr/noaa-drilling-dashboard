@@ -496,6 +496,10 @@ st_folium(m, width=1000, height=500, key="map")
 st.success("""
 **This is how I processed sonar at 5,000 ft below sea.**
 **Now I'll do it for your rig at 55,000 ft.**
-[Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
+[Contact Me on LinkedIn]
+A real-time offshore drilling intelligence platform that fuses NOAA buoy data,
+BOEM rig assets, and MWD telemetry into a predictive rig safety and operations dashboard
+— delivering wave propagation forecasts, motion risk, and environmental fusion.
 """)
+
 
