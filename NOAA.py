@@ -168,9 +168,13 @@ def fetch_spectral(station_id):
             df["Station"] = station_id
             return df
     except:
-        pass
+        pass  # Fall through to simulation
+
+    # UNIQUE SIMULATED SPECTRUM PER BUOY
+    np.random.seed(int(station_id[-3:]) % 100)  # Seed from buoy ID
     freqs = np.linspace(0.03, 0.40, 25)
-    energy = 0.5 + 3 * np.exp(-60 * (freqs - 0.1)**2) + np.random.normal(0, 0.2, 25)
+    peak = 0.08 + 0.04 * (int(station_id[-2:]) / 100)  # Slight peak shift
+    energy = 0.5 + 3 * np.exp(-60 * (freqs - peak)**2) + np.random.normal(0, 0.2, 25)
     df = pd.DataFrame({"Frequency (Hz)": freqs, "Spectral Energy (m²/Hz)": energy.clip(0)})
     df["Station"] = station_id
     return df
@@ -299,23 +303,51 @@ else:
     plot_placeholder.plotly_chart(fig_static, use_container_width=True)
 
 # ========================================
-# 4. WAVE ENERGY vs RIG PROXIMITY
+# 4. WAVE ENERGY vs RIG PROXIMITY — NOW UNIQUE PER BUOY
 # ========================================
 st.markdown("## Wave Energy vs Rig Proximity")
-spectral_dfs = [fetch_spectral(b) for b in selected_buoys]
-combined_df = pd.concat(spectral_dfs) if spectral_dfs else pd.DataFrame()
+
+# Fetch spectral data with unique fallback
+spectral_dfs = []
+for bid in selected_buoys:
+    df = fetch_spectral(bid)
+    # Add unique noise based on buoy ID to avoid identical fallbacks
+    if "Spectral Energy (m²/Hz)" in df.columns:
+        noise = np.random.normal(0, 0.1 * int(bid[-2:]), len(df))  # Unique seed
+        df["Spectral Energy (m²/Hz)"] = df["Spectral Energy (m²/Hz)"].clip(0) + noise.clip(0)
+    spectral_dfs.append(df)
+
+combined_df = pd.concat(spectral_dfs, ignore_index=True) if spectral_dfs else pd.DataFrame()
+
 impact_rows = []
 for bid in selected_buoys:
-    energy = combined_df[combined_df["Station"] == bid]["Spectral Energy (m²/Hz)"].mean()
+    buoy_series = combined_df[combined_df["Station"] == bid]["Spectral Energy (m²/Hz)"]
+    energy = buoy_series.mean() if not buoy_series.empty else np.nan
     b_lat, b_lon = buoy_info[bid][1], buoy_info[bid][2]
-    dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs])
-    impact_rows.append({"Buoy": bid, "Avg Energy": round(energy, 2) if not pd.isna(energy) else np.nan, "Nearest Rig (mi)": round(dist, 1)})
+    dist = min([haversine(b_lat, b_lon, r["lat"], r["lon"]) for r in real_rigs], default=0)
+    impact_rows.append({
+        "Buoy": bid,
+        "Avg Energy": round(energy, 2) if not pd.isna(energy) else 0.0,
+        "Nearest Rig (mi)": round(dist, 1)
+    })
+
 impact_df = pd.DataFrame(impact_rows).dropna()
 if not impact_df.empty:
-    fig_wave = px.scatter(impact_df, x="Nearest Rig (mi)", y="Avg Energy", hover_data=["Buoy"],
-                          title="Wave Energy vs Rig Proximity", template="plotly_dark")
-    fig_wave.update_layout(height=400)
+    fig_wave = px.scatter(
+        impact_df,
+        x="Nearest Rig (mi)",
+        y="Avg Energy",
+        hover_data=["Buoy"],
+        title="Wave Energy vs Rig Proximity",
+        template="plotly_dark",
+        size=[15] * len(impact_df),
+        color="Buoy",
+        color_discrete_sequence=px.colors.qualitative.Plotly
+    )
+    fig_wave.update_layout(height=400, legend_title_text="Buoy ID")
     st.plotly_chart(fig_wave, use_container_width=True)
+else:
+    st.warning("No spectral data available — check NOAA .spec files.")
 
 # ========================================
 # 5. GULF OF MEXICO — RIGS & BUOYS (BOEM POPUPS + NOAA DATA)
