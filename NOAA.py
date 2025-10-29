@@ -168,12 +168,12 @@ def fetch_spectral(station_id):
             df["Station"] = station_id
             return df
     except:
-        pass  # Fall through to simulation
+        pass
 
     # UNIQUE SIMULATED SPECTRUM PER BUOY
-    np.random.seed(int(station_id[-3:]) % 100)  # Seed from buoy ID
+    np.random.seed(int(station_id[-3:]) % 100)
     freqs = np.linspace(0.03, 0.40, 25)
-    peak = 0.08 + 0.04 * (int(station_id[-2:]) / 100)  # Slight peak shift
+    peak = 0.08 + 0.04 * (int(station_id[-2:]) / 100)
     energy = 0.5 + 3 * np.exp(-60 * (freqs - peak)**2) + np.random.normal(0, 0.2, 25)
     df = pd.DataFrame({"Frequency (Hz)": freqs, "Spectral Energy (m²/Hz)": energy.clip(0)})
     df["Station"] = station_id
@@ -184,7 +184,6 @@ def fetch_spectral(station_id):
 # ========================================
 st.markdown("## NOAA Buoy Data — Live Environmental Conditions")
 
-# Safe primary selection
 if not selected_buoys or selected_buoys[0] not in buoy_info:
     primary = list(buoy_info.keys())[0]
 else:
@@ -307,13 +306,11 @@ else:
 # ========================================
 st.markdown("## Wave Energy vs Rig Proximity")
 
-# Fetch spectral data with unique fallback
 spectral_dfs = []
 for bid in selected_buoys:
     df = fetch_spectral(bid)
-    # Add unique noise based on buoy ID to avoid identical fallbacks
     if "Spectral Energy (m²/Hz)" in df.columns:
-        noise = np.random.normal(0, 0.1 * int(bid[-2:]), len(df))  # Unique seed
+        noise = np.random.normal(0, 0.1 * int(bid[-2:]), len(df))
         df["Spectral Energy (m²/Hz)"] = df["Spectral Energy (m²/Hz)"].clip(0) + noise.clip(0)
     spectral_dfs.append(df)
 
@@ -350,16 +347,95 @@ else:
     st.warning("No spectral data available — check NOAA .spec files.")
 
 # ========================================
+# 6. WAVE PROPAGATION — BUOYS → RIGS (REAL-TIME PREDICTION)
+# ========================================
+st.markdown("## Wave Propagation to Rigs — Real-Time Motion Forecast")
+
+if len(selected_buoys) > 1:
+    buoy_data = {bid: fetch_realtime(bid) for bid in selected_buoys}
+
+    propagation_rows = []
+    for rig in real_rigs:
+        r_lat, r_lon = rig["lat"], rig["lon"]
+        rig_name = rig["name"]
+
+        contributions = []
+        for bid in selected_buoys:
+            b_lat, b_lon = buoy_info[bid][1], buoy_info[bid][2]
+            rt = buoy_data[bid]
+
+            dist_mi = haversine(b_lat, b_lon, r_lat, r_lon)
+            if dist_mi > 300:
+                continue
+
+            period = rt['DPD']
+            if period < 3: period = 6
+            wave_speed_mps = 1.56 * period
+            delay_min = (dist_mi * 1609.34) / (wave_speed_mps * 60)
+
+            wave_dir = rt['MWD']
+            bearing = np.degrees(np.arctan2(r_lon - b_lon, r_lat - b_lat)) % 360
+            angle_diff = min(abs(wave_dir - bearing), 360 - abs(wave_dir - bearing))
+
+            decay = np.exp(-dist_mi / 100)
+            direction_factor = np.cos(np.radians(angle_diff))
+            if direction_factor < 0.3:
+                direction_factor = 0.3
+
+            contrib_wave = rt['WVHT'] * decay * direction_factor
+            contributions.append({
+                "buoy": bid,
+                "wave_ht": contrib_wave,
+                "delay_min": delay_min,
+                "dist_mi": dist_mi
+            })
+
+        if contributions:
+            weights = [1 / (c["dist_mi"] + 10) for c in contributions]
+            predicted_ht = sum(c["wave_ht"] * w for c, w in zip(contributions, weights)) / sum(weights)
+            max_delay = max(c["delay_min"] for c in contributions)
+            dominant_buoy = max(contributions, key=lambda x: x["wave_ht"])["buoy"]
+        else:
+            predicted_ht = 0.0
+            max_delay = 0
+            dominant_buoy = "N/A"
+
+        if predicted_ht > 6.0:
+            risk = "HIGH"
+            color = "red"
+        elif predicted_ht > 4.0:
+            risk = "MEDIUM"
+            color = "orange"
+        else:
+            risk = "LOW"
+            color = "lime"
+
+        propagation_rows.append({
+            "Rig": rig_name,
+            "Predicted Wave Ht (ft)": round(predicted_ht, 1),
+            "Est. Arrival (min)": f"+{int(max_delay)}",
+            "Dominant Buoy": dominant_buoy,
+            "Risk": f"<span style='color:{color}; font-weight:bold;'>{risk}</span>"
+        })
+
+    if propagation_rows:
+        prop_df = pd.DataFrame(propagation_rows)
+        st.markdown("**Predicted wave impact at each rig (next 1–3 hrs)**")
+        st.markdown(prop_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+    else:
+        st.info("No buoys within 300 mi of rigs.")
+else:
+    st.info("Select **2+ buoys** to enable wave propagation forecast.")
+
+# ========================================
 # 5. GULF OF MEXICO — RIGS & BUOYS (BOEM POPUPS + NOAA DATA)
 # ========================================
 st.markdown("## Gulf of Mexico — Rigs & Buoys")
 
-# Pre-fetch buoy data
 buoy_data = {bid: fetch_realtime(bid) for bid in selected_buoys}
 
 m = folium.Map(location=[27.5, -88.5], zoom_start=7, tiles="CartoDB dark_matter")
 
-# RIGS WITH BOEM DETAILS (EXACT FORMAT)
 for rig in real_rigs:
     name = rig["name"]
     details = boem_rig_details.get(name, {})
@@ -385,7 +461,6 @@ for rig in real_rigs:
         weight=2
     ).add_to(m)
 
-# BUOYS WITH LIVE NOAA DATA
 for bid in selected_buoys:
     lat, lon = buoy_info[bid][1], buoy_info[bid][2]
     rt = buoy_data[bid]
@@ -423,3 +498,4 @@ st.success("""
 **Now I'll do it for your rig at 55,000 ft.**
 [Contact Me on LinkedIn](https://www.linkedin.com/in/nicholas-leiker-50686755) | Seeking analysis role with MRE Consulting
 """)
+
